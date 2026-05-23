@@ -80,6 +80,7 @@ class OptionsFlowHandler(OptionsFlow):
     """Multi-step options flow for managing calendar sources and sync settings."""
 
     def __init__(self, config_entry: ConfigEntry) -> None:
+        self._config_entry = config_entry
         self._options: dict[str, Any] = dict(config_entry.options)
         self._sources: list[dict] = list(self._options.get(CONF_SOURCES, []))
         self._editing_idx: int | None = None
@@ -133,6 +134,37 @@ class OptionsFlowHandler(OptionsFlow):
         return self.async_show_form(step_id="sync_settings", data_schema=schema)
 
     # ------------------------------------------------------------------ #
+    # Helpers
+    # ------------------------------------------------------------------ #
+
+    async def _calendar_selector(self, default: str = "") -> selector.SelectSelector:
+        """Return a SelectSelector pre-populated with the user's Google Calendars.
+
+        custom_value=True lets the user type a new calendar name that doesn't
+        exist yet — it will be created automatically on first sync.
+        Falls back to an empty list if the API call fails.
+        """
+        cal_names: list[str] = []
+        try:
+            from .coordinator import ICSGCalSyncCoordinator
+            coordinator: ICSGCalSyncCoordinator = self.hass.data[DOMAIN].get(
+                self._config_entry.entry_id
+            )
+            if coordinator:
+                cal_names = await coordinator._client.list_writable_calendars()
+        except Exception:
+            pass
+
+        options = [selector.SelectOptionDict(value=n, label=n) for n in cal_names]
+        return selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=options,
+                custom_value=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+    # ------------------------------------------------------------------ #
     # Add source
     # ------------------------------------------------------------------ #
 
@@ -163,7 +195,7 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Required(CONF_SOURCE_URL): selector.TextSelector(
                     selector.TextSelectorConfig(type="url")
                 ),
-                vol.Required(CONF_SOURCE_CALENDAR): selector.TextSelector(),
+                vol.Required(CONF_SOURCE_CALENDAR): await self._calendar_selector(),
                 vol.Optional(CONF_SOURCE_TEAM, default=""): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_COLOR, default=""): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_USE_SE, default=False): selector.BooleanSelector(),
@@ -248,7 +280,7 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Required(CONF_SOURCE_URL, default=source[CONF_SOURCE_URL]): selector.TextSelector(
                     selector.TextSelectorConfig(type="url")
                 ),
-                vol.Required(CONF_SOURCE_CALENDAR, default=source[CONF_SOURCE_CALENDAR]): selector.TextSelector(),
+                vol.Required(CONF_SOURCE_CALENDAR, default=source[CONF_SOURCE_CALENDAR]): await self._calendar_selector(source[CONF_SOURCE_CALENDAR]),
                 vol.Optional(CONF_SOURCE_TEAM, default=source.get(CONF_SOURCE_TEAM, "")): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_COLOR, default=source.get(CONF_SOURCE_COLOR, "")): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_USE_SE, default=source.get(CONF_SOURCE_USE_SE, False)): selector.BooleanSelector(),

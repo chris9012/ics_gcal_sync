@@ -54,6 +54,21 @@ class GoogleCalendarClient:
         data = await self._request("GET", "/users/me/settings/timezone")
         return data["value"]
 
+    async def list_writable_calendars(self) -> list[str]:
+        """Return sorted names of calendars the user owns or can write to."""
+        data = await self._request(
+            "GET",
+            "/users/me/calendarList",
+            params={"showHidden": "true", "maxResults": 250},
+        )
+        names = []
+        for cal in data.get("items", []):
+            if cal.get("accessRole") in ("owner", "writer"):
+                name = cal.get("summaryOverride") or cal.get("summary", "")
+                if name:
+                    names.append(name)
+        return sorted(names)
+
     async def get_or_create_calendar(self, name: str, timezone: str) -> dict:
         """Return the calendar with the given name, creating it if absent."""
         data = await self._request(
