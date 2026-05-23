@@ -24,8 +24,9 @@ from .const import (
     CONF_SOURCE_COLOR,
     CONF_SOURCE_ENABLED,
     CONF_SOURCE_ID,
-    CONF_SOURCE_TEAM,
+    CONF_SOURCE_PREFIX,
     CONF_SOURCE_URL,
+    CONF_SOURCE_URLS,
     CONF_SOURCE_USE_SE,
     CONF_SYNC_INTERVAL,
     DEFAULT_ADD_EVENTS,
@@ -171,17 +172,18 @@ class OptionsFlowHandler(OptionsFlow):
     async def async_step_add_source(self, user_input: dict | None = None):
         errors: dict[str, str] = {}
         if user_input is not None:
-            if not user_input.get(CONF_SOURCE_URL, "").startswith("http"):
-                errors[CONF_SOURCE_URL] = "invalid_url"
+            ics_urls = _parse_urls(user_input.get("ics_urls_raw", ""))
+            if not ics_urls:
+                errors["ics_urls_raw"] = "invalid_url"
             if not user_input.get(CONF_SOURCE_CALENDAR, "").strip():
                 errors[CONF_SOURCE_CALENDAR] = "required"
             if not errors:
                 self._sources.append(
                     {
                         CONF_SOURCE_ID: str(uuid.uuid4()),
-                        CONF_SOURCE_URL: user_input[CONF_SOURCE_URL].strip(),
+                        CONF_SOURCE_URLS: ics_urls,
                         CONF_SOURCE_CALENDAR: user_input[CONF_SOURCE_CALENDAR].strip(),
-                        CONF_SOURCE_TEAM: user_input.get(CONF_SOURCE_TEAM, "").strip(),
+                        CONF_SOURCE_PREFIX: user_input.get(CONF_SOURCE_PREFIX, "").strip(),
                         CONF_SOURCE_COLOR: user_input.get(CONF_SOURCE_COLOR, "").strip(),
                         CONF_SOURCE_USE_SE: user_input.get(CONF_SOURCE_USE_SE, False),
                         CONF_SOURCE_ENABLED: True,
@@ -192,11 +194,11 @@ class OptionsFlowHandler(OptionsFlow):
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_SOURCE_URL): selector.TextSelector(
-                    selector.TextSelectorConfig(type="url")
+                vol.Required("ics_urls_raw"): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
                 ),
                 vol.Required(CONF_SOURCE_CALENDAR): await self._calendar_selector(),
-                vol.Optional(CONF_SOURCE_TEAM, default=""): selector.TextSelector(),
+                vol.Optional(CONF_SOURCE_PREFIX, default=""): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_COLOR, default=""): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_USE_SE, default=False): selector.BooleanSelector(),
             }
@@ -224,7 +226,7 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_edit_source()
 
         source_options = {
-            s[CONF_SOURCE_ID]: f"{s[CONF_SOURCE_CALENDAR]} — {s.get(CONF_SOURCE_TEAM) or s[CONF_SOURCE_URL][:60]}"
+            s[CONF_SOURCE_ID]: f"{s[CONF_SOURCE_CALENDAR]} — {s.get(CONF_SOURCE_PREFIX) or _first_url(s)}"
             for s in self._sources
         }
         schema = vol.Schema(
@@ -257,16 +259,17 @@ class OptionsFlowHandler(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            if not user_input.get(CONF_SOURCE_URL, "").startswith("http"):
-                errors[CONF_SOURCE_URL] = "invalid_url"
+            ics_urls = _parse_urls(user_input.get("ics_urls_raw", ""))
+            if not ics_urls:
+                errors["ics_urls_raw"] = "invalid_url"
             if not user_input.get(CONF_SOURCE_CALENDAR, "").strip():
                 errors[CONF_SOURCE_CALENDAR] = "required"
             if not errors:
                 self._sources[self._editing_idx] = {
                     **source,
-                    CONF_SOURCE_URL: user_input[CONF_SOURCE_URL].strip(),
+                    CONF_SOURCE_URLS: ics_urls,
                     CONF_SOURCE_CALENDAR: user_input[CONF_SOURCE_CALENDAR].strip(),
-                    CONF_SOURCE_TEAM: user_input.get(CONF_SOURCE_TEAM, "").strip(),
+                    CONF_SOURCE_PREFIX: user_input.get(CONF_SOURCE_PREFIX, "").strip(),
                     CONF_SOURCE_COLOR: user_input.get(CONF_SOURCE_COLOR, "").strip(),
                     CONF_SOURCE_USE_SE: user_input.get(CONF_SOURCE_USE_SE, False),
                     CONF_SOURCE_ENABLED: user_input.get(CONF_SOURCE_ENABLED, True),
@@ -275,14 +278,19 @@ class OptionsFlowHandler(OptionsFlow):
                 self._editing_idx = None
                 return await self.async_step_init()
 
+        existing_urls = source.get(CONF_SOURCE_URLS) or (
+            [source[CONF_SOURCE_URL]] if source.get(CONF_SOURCE_URL) else []
+        )
+        urls_text = "\n".join(existing_urls)
+
         schema = vol.Schema(
             {
-                vol.Required(CONF_SOURCE_URL, default=source[CONF_SOURCE_URL]): selector.TextSelector(
-                    selector.TextSelectorConfig(type="url")
+                vol.Required("ics_urls_raw", description={"suggested_value": urls_text}): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
                 ),
-                vol.Required(CONF_SOURCE_CALENDAR, default=source[CONF_SOURCE_CALENDAR]): await self._calendar_selector(source[CONF_SOURCE_CALENDAR]),
-                vol.Optional(CONF_SOURCE_TEAM, default=source.get(CONF_SOURCE_TEAM, "")): selector.TextSelector(),
-                vol.Optional(CONF_SOURCE_COLOR, default=source.get(CONF_SOURCE_COLOR, "")): selector.TextSelector(),
+                vol.Required(CONF_SOURCE_CALENDAR, description={"suggested_value": source[CONF_SOURCE_CALENDAR]}): await self._calendar_selector(source[CONF_SOURCE_CALENDAR]),
+                vol.Optional(CONF_SOURCE_PREFIX, description={"suggested_value": source.get(CONF_SOURCE_PREFIX, "")}): selector.TextSelector(),
+                vol.Optional(CONF_SOURCE_COLOR, description={"suggested_value": source.get(CONF_SOURCE_COLOR, "")}): selector.TextSelector(),
                 vol.Optional(CONF_SOURCE_USE_SE, default=source.get(CONF_SOURCE_USE_SE, False)): selector.BooleanSelector(),
                 vol.Optional(CONF_SOURCE_ENABLED, default=source.get(CONF_SOURCE_ENABLED, True)): selector.BooleanSelector(),
             }
@@ -303,7 +311,7 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_init()
 
         source = self._sources[self._editing_idx]
-        label = f"{source[CONF_SOURCE_CALENDAR]} — {source.get(CONF_SOURCE_TEAM) or source[CONF_SOURCE_URL][:60]}"
+        label = f"{source[CONF_SOURCE_CALENDAR]} — {source.get(CONF_SOURCE_PREFIX) or _first_url(source)}"
         schema = vol.Schema(
             {
                 vol.Required("confirm", default=False): selector.BooleanSelector(),
@@ -343,23 +351,25 @@ class OptionsFlowHandler(OptionsFlow):
             {
                 vol.Optional(
                     CONF_SE_USERNAME,
-                    default=self._options.get(CONF_SE_USERNAME, ""),
+                    description={"suggested_value": self._options.get(CONF_SE_USERNAME, "")},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(type="email", autocomplete="username")
                 ),
                 vol.Optional(
                     CONF_SE_PASSWORD,
-                    default=self._options.get(CONF_SE_PASSWORD, ""),
+                    description={"suggested_value": self._options.get(CONF_SE_PASSWORD, "")},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(type="password", autocomplete="current-password")
                 ),
                 vol.Optional(
-                    "location_abbreviations_raw", default=abbrevs_text
+                    "location_abbreviations_raw",
+                    description={"suggested_value": abbrevs_text},
                 ): selector.TextSelector(
                     selector.TextSelectorConfig(multiline=True)
                 ),
                 vol.Optional(
-                    "se_title_removals_raw", default=removals_text
+                    "se_title_removals_raw",
+                    description={"suggested_value": removals_text},
                 ): selector.TextSelector(),
             }
         )
@@ -380,6 +390,24 @@ class OptionsFlowHandler(OptionsFlow):
 # ------------------------------------------------------------------ #
 # Helpers
 # ------------------------------------------------------------------ #
+
+def _parse_urls(raw: str) -> list[str]:
+    """Parse a textarea of URLs (one per line) into a validated list."""
+    urls = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if line and (line.startswith("http") or line.startswith("webcal")):
+            urls.append(line.replace("webcal://", "https://"))
+    return urls
+
+
+def _first_url(source: dict) -> str:
+    """Return a short display string for the first URL in a source (new or legacy format)."""
+    urls = source.get(CONF_SOURCE_URLS) or []
+    if not urls and source.get(CONF_SOURCE_URL):
+        urls = [source[CONF_SOURCE_URL]]
+    return urls[0][:60] if urls else "?"
+
 
 def _parse_abbreviations(raw: str) -> dict[str, str]:
     """Parse 'Key = Value' lines into a dict, ignoring blanks and comments."""

@@ -173,40 +173,92 @@ class SportsEngineEnricher(BaseEnricher):
     async def _async_login(
         self, session: aiohttp.ClientSession, username: str, password: str
     ) -> str:
-        """Log into SportsEngine and return the session cookie value."""
-        # 1. GET login page to extract CSRF token
-        try:
-            async with session.get(SE_LOGIN_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                html = await resp.text()
-        except Exception as err:
-            raise SportsEngineLoginError(f"Could not reach SE login page: {err}") from err
+        """Log into SportsEngine and return the session cookie value.
 
-        csrf_match = re.search(r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"', html)
-        if not csrf_match:
-            raise SportsEngineLoginError("CSRF token not found on SE login page")
-        csrf = csrf_match.group(1)
+        SE uses a two-step login flow (step 1: email, step 2: password).
+        Uses a fresh ClientSession with its own cookie jar so Rails session
+        cookies are reliably carried between the three requests.
+        """
+        browser_ua = (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        )
+        base_headers = {
+            "User-Agent": browser_ua,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
 
-        # 2. POST credentials
-        try:
-            async with session.post(
-                SE_LOGIN_URL,
-                data={
-                    "user[email]": username,
-                    "user[password]": password,
-                    "authenticity_token": csrf,
-                },
-                allow_redirects=False,
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                cookie = resp.cookies.get("sportngin_session")
-                if cookie:
-                    return cookie.value
-                if resp.status not in (200, 302):
-                    raise SportsEngineLoginError(f"Login returned HTTP {resp.status}")
-        except SportsEngineLoginError:
-            raise
-        except Exception as err:
-            raise SportsEngineLoginError(f"Login POST failed: {err}") from err
+        async with aiohttp.ClientSession(headers=base_headers) as s:
+            # ---- Step 1: GET login page → extract CSRF token ----------- #
+            try:
+                async with s.get(SE_LOGIN_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    html1 = await resp.text()
+            except Exception as err:
+                raise SportsEngineLoginError(f"Could not reach SE login page: {err}") from err
+
+            csrf1 = _extract_csrf(html1)
+            if not csrf1:
+                raise SportsEngineLoginError("CSRF token not found on SE login page (step 1)")
+            _LOGGER.debug("SE step 1 CSRF found (length %d)", len(csrf1))
+
+            # ---- Step 2: POST email → get password page + new CSRF ----- #
+            try:
+                async with s.post(
+                    SE_LOGIN_URL,
+                    data={"authenticity_token": csrf1, "user[login]": username, "commit": "Continue"},
+                    headers={"Referer": SE_LOGIN_URL},
+                    allow_redirects=True,
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status != 200:
+                        body = (await resp.text())[:500]
+                        _LOGGER.warning("SE step 1 POST returned HTTP %d: %s", resp.status, body)
+                        raise SportsEngineLoginError(f"Step 1 POST returned HTTP {resp.status}")
+                    html2 = await resp.text()
+            except SportsEngineLoginError:
+                raise
+            except Exception as err:
+                raise SportsEngineLoginError(f"Step 1 POST failed: {err}") from err
+
+            csrf2 = _extract_csrf(html2)
+            if not csrf2:
+                raise SportsEngineLoginError("CSRF token not found on SE login page (step 2)")
+            _LOGGER.debug("SE step 2 CSRF found (length %d)", len(csrf2))
+
+            # ---- Step 3: POST password → follow redirects, grab cookie - #
+            try:
+                async with s.post(
+                    SE_LOGIN_URL,
+                    data={
+                        "authenticity_token": csrf2,
+                        "user[login]": username,
+                        "user[password]": password,
+                        "commit": "Sign in",
+                    },
+                    headers={"Referer": SE_LOGIN_URL},
+                    allow_redirects=True,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    _LOGGER.debug(
+                        "SE step 3 final status=%d url=%s", resp.status, resp.url
+                    )
+                    if resp.status not in (200, 302):
+                        body = (await resp.text())[:500]
+                        _LOGGER.warning("SE step 3 returned HTTP %d: %s", resp.status, body)
+                        raise SportsEngineLoginError(f"Step 3 returned HTTP {resp.status}")
+            except SportsEngineLoginError:
+                raise
+            except Exception as err:
+                raise SportsEngineLoginError(f"Step 3 POST failed: {err}") from err
+
+            # Search the entire cookie jar — the cookie domain may differ from
+            # the login URL (e.g. .sportngin.com vs user.sportngin.com)
+            for morsel in s.cookie_jar:
+                if morsel.key == "sportngin_session":
+                    _LOGGER.debug("SE sportngin_session cookie found in jar")
+                    return morsel.value
 
         raise SportsEngineLoginError("sportngin_session cookie not found after login")
 
@@ -232,6 +284,17 @@ class SportsEngineEnricher(BaseEnricher):
 # ------------------------------------------------------------------ #
 # Helpers
 # ------------------------------------------------------------------ #
+
+def _extract_csrf(html: str) -> str | None:
+    """Extract the CSRF token from a page's meta tag (either attribute order)."""
+    m = re.search(
+        r'<meta[^>]+name="csrf-token"[^>]+content="([^"]+)"'
+        r'|<meta[^>]+content="([^"]+)"[^>]+name="csrf-token"',
+        html,
+    )
+    if not m:
+        return None
+    return m.group(1) or m.group(2)
 
 def _apply_abbreviations(
     location: str,

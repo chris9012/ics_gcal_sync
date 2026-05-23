@@ -18,14 +18,14 @@ _RECURRENCE_PROPS = ("RRULE", "EXRULE", "EXDATE", "RDATE")
 async def async_fetch_and_parse(
     session: aiohttp.ClientSession,
     url: str,
-    team_name: str = "",
+    prefix: str = "",
     color_id: str = "",
 ) -> list[ParsedEvent]:
     """Fetch one ICS URL and return a list of ParsedEvents."""
     content = await _fetch(session, url)
     if content is None:
         return []
-    return _parse(content, team_name, color_id)
+    return _parse(content, prefix, color_id)
 
 
 async def _fetch(session: aiohttp.ClientSession, url: str) -> str | None:
@@ -40,7 +40,7 @@ async def _fetch(session: aiohttp.ClientSession, url: str) -> str | None:
     return None
 
 
-def _parse(content: str, team_name: str, color_id: str) -> list[ParsedEvent]:
+def _parse(content: str, prefix: str, color_id: str) -> list[ParsedEvent]:
     try:
         cal = Calendar.from_ical(content)
     except Exception as err:
@@ -64,12 +64,12 @@ def _parse(content: str, team_name: str, color_id: str) -> list[ParsedEvent]:
         if not uid:
             uid = hashlib.md5(component.to_ical()).hexdigest()
 
-        dedup_key = f"{uid}|{team_name}"
+        dedup_key = f"{uid}|{prefix}"
         if dedup_key in seen_uids:
             continue
         seen_uids.add(dedup_key)
 
-        composite_id = f"{uid}_{team_name}" if team_name else uid
+        composite_id = f"{uid}_{prefix}" if prefix else uid
 
         dtstart = component.decoded("DTSTART", None)
         if dtstart is None:
@@ -90,7 +90,7 @@ def _parse(content: str, team_name: str, color_id: str) -> list[ParsedEvent]:
             ParsedEvent(
                 uid=uid,
                 composite_id=composite_id,
-                team_name=team_name,
+                prefix=prefix,
                 summary=str(component.get("SUMMARY", "")).strip(),
                 start=dtstart,
                 end=dtend,

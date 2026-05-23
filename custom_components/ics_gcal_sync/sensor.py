@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
@@ -42,9 +41,9 @@ class ICSGCalSyncStatusSensor(CoordinatorEntity[ICSGCalSyncCoordinator], SensorE
         """Return last sync time or error indicator."""
         if not self.coordinator.last_update_success:
             return "Error"
-        if self.coordinator.last_updated is None:
+        if self.coordinator.last_sync_time is None:
             return "Never"
-        return self.coordinator.last_updated.isoformat()
+        return self.coordinator.last_sync_time.isoformat()
 
     @property
     def extra_state_attributes(self) -> dict:

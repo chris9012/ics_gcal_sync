@@ -27,9 +27,10 @@ CONF_LOCATION_ABBREVIATIONS = "location_abbreviations"
 
 # Per-source keys
 CONF_SOURCE_ID = "id"
-CONF_SOURCE_URL = "ics_url"
+CONF_SOURCE_URL = "ics_url"    # legacy single-URL key — kept for migration reads only
+CONF_SOURCE_URLS = "ics_urls"  # current multi-URL key (list of strings)
 CONF_SOURCE_CALENDAR = "target_calendar"
-CONF_SOURCE_TEAM = "team_name"
+CONF_SOURCE_PREFIX = "team_name"  # stored key kept as "team_name" for backwards compat
 CONF_SOURCE_COLOR = "color_id"
 CONF_SOURCE_ENABLED = "enabled"
 CONF_SOURCE_USE_SE = "use_se_enricher"

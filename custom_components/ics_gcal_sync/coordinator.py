@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -18,8 +18,9 @@ from .const import (
     CONF_SOURCE_COLOR,
     CONF_SOURCE_ENABLED,
     CONF_SOURCE_ID,
-    CONF_SOURCE_TEAM,
+    CONF_SOURCE_PREFIX,
     CONF_SOURCE_URL,
+    CONF_SOURCE_URLS,
     CONF_SOURCE_USE_SE,
     CONF_SYNC_INTERVAL,
     DEFAULT_SYNC_INTERVAL,
@@ -35,6 +36,8 @@ _LOGGER = logging.getLogger(__name__)
 
 class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
     """Coordinate periodic ICS → Google Calendar sync."""
+
+    last_sync_time: datetime | None = None
 
     def __init__(
         self,
@@ -72,18 +75,22 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
         raw_sources = self._entry.options.get(CONF_SOURCES, [])
         sources = []
         for raw in raw_sources:
+            # Migration: old configs store a single "ics_url" string
+            ics_urls = raw.get(CONF_SOURCE_URLS) or []
+            if not ics_urls and raw.get(CONF_SOURCE_URL):
+                ics_urls = [raw[CONF_SOURCE_URL]]
             sources.append(
                 CalendarSource(
                     id=raw.get(CONF_SOURCE_ID, ""),
-                    ics_url=raw.get(CONF_SOURCE_URL, ""),
+                    ics_urls=ics_urls,
                     target_calendar=raw.get(CONF_SOURCE_CALENDAR, ""),
-                    team_name=raw.get(CONF_SOURCE_TEAM, ""),
+                    prefix=raw.get(CONF_SOURCE_PREFIX, ""),
                     color_id=raw.get(CONF_SOURCE_COLOR, ""),
                     enabled=raw.get(CONF_SOURCE_ENABLED, True),
                     use_se_enricher=raw.get(CONF_SOURCE_USE_SE, False),
                 )
             )
-        return [s for s in sources if s.ics_url and s.target_calendar]
+        return [s for s in sources if s.ics_urls and s.target_calendar]
 
     async def _async_update_data(self) -> list[SyncResult]:
         """Run one full sync pass. Called by HA on update_interval."""
@@ -96,12 +103,14 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
         self._enrichers = self._build_enrichers()
 
         try:
-            return await async_sync_all(
+            results = await async_sync_all(
                 self.hass,
                 self._client,
                 sources,
                 self._entry.options,
                 self._enrichers,
             )
+            self.last_sync_time = datetime.now(timezone.utc)
+            return results
         except Exception as err:
             raise UpdateFailed(f"Sync error: {err}") from err

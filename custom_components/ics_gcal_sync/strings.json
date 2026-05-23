@@ -36,9 +36,9 @@
       "add_source": {
         "title": "Add Calendar Source",
         "data": {
-          "ics_url": "ICS / iCal feed URL",
+          "ics_urls_raw": "ICS / iCal feed URLs (one per line)",
           "target_calendar": "Target Google Calendar name",
-          "team_name": "Team name (prepended to event titles)",
+          "team_name": "Prefix (prepended to event titles)",
           "color_id": "Event color ID (1-11, leave blank for default)",
           "use_se_enricher": "Enrich with SportsEngine field/location data"
         }
@@ -53,9 +53,9 @@
       "edit_source": {
         "title": "Edit Calendar Source",
         "data": {
-          "ics_url": "ICS / iCal feed URL",
+          "ics_urls_raw": "ICS / iCal feed URLs (one per line)",
           "target_calendar": "Target Google Calendar name",
-          "team_name": "Team name",
+          "team_name": "Prefix",
           "color_id": "Event color ID",
           "use_se_enricher": "Enrich with SportsEngine field/location data",
           "enabled": "Enabled"

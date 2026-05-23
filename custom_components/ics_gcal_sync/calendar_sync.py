@@ -102,13 +102,14 @@ async def _sync_calendar_group(
         seen_composite_ids: set[str] = set()
 
         for source in sources:
-            fetched = await async_fetch_and_parse(
-                http_session, source.ics_url, source.team_name, source.color_id
-            )
-            for event in fetched:
-                if event.composite_id not in seen_composite_ids:
-                    seen_composite_ids.add(event.composite_id)
-                    parsed_events.append(event)
+            for url in source.ics_urls:
+                fetched = await async_fetch_and_parse(
+                    http_session, url, source.prefix, source.color_id
+                )
+                for event in fetched:
+                    if event.composite_id not in seen_composite_ids:
+                        seen_composite_ids.add(event.composite_id)
+                        parsed_events.append(event)
 
         _LOGGER.debug("%s: parsed %d events", calendar_name, len(parsed_events))
 
@@ -120,9 +121,21 @@ async def _sync_calendar_group(
             parsed_events = enriched
 
         for event in parsed_events:
-            # Apply team prefix universally (all sources, not just SE)
-            if event.team_name and event.summary:
-                event.summary = f"{event.team_name} - {event.summary}"
+            # Apply prefix universally (all sources)
+            if event.prefix and event.summary:
+                event.summary = f"{event.prefix} - {event.summary}"
+
+            # Rebuild enrichment_suffix with the final summary so recompute_md5
+            # captures team prefix and title cleanup even for non-SE events.
+            # Keep any seLocation= part, replace any existing summary= part.
+            other_parts = [
+                p for p in event.enrichment_suffix.split("|")
+                if p and not p.startswith("summary=")
+            ]
+            if event.summary:
+                other_parts.append(f"summary={event.summary}")
+            event.enrichment_suffix = "|".join(other_parts)
+
             recompute_md5(event)
 
         # Add / update

@@ -10,9 +10,9 @@ class CalendarSource:
     """One ICS feed → target Google Calendar mapping."""
 
     id: str
-    ics_url: str
+    ics_urls: list[str]
     target_calendar: str
-    team_name: str = ""
+    prefix: str = ""
     color_id: str = ""
     enabled: bool = True
     use_se_enricher: bool = False
@@ -23,8 +23,8 @@ class ParsedEvent:
     """An event parsed from an ICS feed, ready for Google Calendar comparison."""
 
     uid: str
-    composite_id: str       # uid + '_' + team_name, or plain uid if no team
-    team_name: str
+    composite_id: str       # uid + '_' + prefix, or plain uid if no prefix
+    prefix: str
     summary: str
     start: datetime | date
     end: datetime | date
