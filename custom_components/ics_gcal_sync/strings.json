@@ -14,10 +14,86 @@
   "options": {
     "step": {
       "init": {
-        "title": "ICS GCal Sync Settings",
-        "description": "Manage your ICS calendar sources and sync settings.",
+        "title": "ICS GCal Sync",
+        "menu_options": {
+          "sync_settings": "Sync settings",
+          "add_source": "Add calendar source",
+          "manage_sources": "Edit / remove sources",
+          "se_settings": "SportsEngine settings",
+          "done": "Save & close"
+        }
+      },
+      "sync_settings": {
+        "title": "Sync Settings",
         "data": {
-          "sync_interval": "Sync interval (minutes)"
+          "sync_interval": "Sync interval",
+          "add_events": "Add new events to Google Calendar",
+          "modify_events": "Update changed events",
+          "remove_events": "Remove events no longer in the feed",
+          "remove_past_events": "Also remove past events"
+        }
+      },
+      "add_source": {
+        "title": "Add Calendar Source",
+        "data": {
+          "ics_url": "ICS / iCal feed URL",
+          "target_calendar": "Target Google Calendar name",
+          "team_name": "Team name (prepended to event titles)",
+          "color_id": "Event color ID (1–11, leave blank for default)",
+          "use_se_enricher": "Enrich with SportsEngine field/location data"
+        }
+      },
+      "manage_sources": {
+        "title": "Manage Calendar Sources",
+        "data": {
+          "source_id": "Calendar source",
+          "action": "Action"
+        }
+      },
+      "edit_source": {
+        "title": "Edit Calendar Source",
+        "data": {
+          "ics_url": "ICS / iCal feed URL",
+          "target_calendar": "Target Google Calendar name",
+          "team_name": "Team name",
+          "color_id": "Event color ID",
+          "use_se_enricher": "Enrich with SportsEngine field/location data",
+          "enabled": "Enabled"
+        }
+      },
+      "confirm_remove": {
+        "title": "Remove Calendar Source",
+        "description": "Remove **{source_label}**?  Events already synced to Google Calendar will not be deleted.",
+        "data": {
+          "confirm": "Yes, remove this source"
+        }
+      },
+      "se_settings": {
+        "title": "SportsEngine Settings",
+        "description": "Credentials are used to fetch field/location details and are re-used automatically when the session expires.",
+        "data": {
+          "se_username": "SportsEngine email",
+          "se_password": "SportsEngine password",
+          "location_abbreviations_raw": "Location abbreviations (one per line: Venue Name = Short Name)",
+          "se_title_removals_raw": "Title tokens to remove from SportsEngine events (comma-separated)"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "URL must start with http:// or https://",
+      "required": "This field is required"
+    }
+  },
+  "issues": {
+    "se_login_failed": {
+      "title": "SportsEngine login failed",
+      "description": "Could not log in to SportsEngine. Field/location data will not be fetched until the credentials are corrected.\n\nUpdate your credentials in **Settings → Devices & Services → ICS GCal Sync → Configure → SportsEngine settings**.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Update SportsEngine credentials",
+            "description": "Open the integration options to update your SportsEngine username and password."
+          }
         }
       }
     }

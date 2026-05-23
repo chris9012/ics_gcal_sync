@@ -14,7 +14,9 @@ GCAL_API_BASE = "https://www.googleapis.com/calendar/v3"
 GCAL_MARKER_KEY = "fromGAS"
 GCAL_MARKER_VALUE = "true"
 
-# Config/options keys
+# ------------------------------------------------------------------ #
+# Config / options keys
+# ------------------------------------------------------------------ #
 CONF_SOURCES = "sources"
 CONF_SYNC_INTERVAL = "sync_interval"
 CONF_ADD_EVENTS = "add_events"
@@ -30,10 +32,29 @@ CONF_SOURCE_CALENDAR = "target_calendar"
 CONF_SOURCE_TEAM = "team_name"
 CONF_SOURCE_COLOR = "color_id"
 CONF_SOURCE_ENABLED = "enabled"
+CONF_SOURCE_USE_SE = "use_se_enricher"
 
+# SportsEngine settings (global)
+CONF_SE_USERNAME = "se_username"
+CONF_SE_PASSWORD = "se_password"
+CONF_SE_TITLE_REMOVALS = "se_title_removals"
+
+# ------------------------------------------------------------------ #
 # Defaults
+# ------------------------------------------------------------------ #
 DEFAULT_SYNC_INTERVAL = 15
 DEFAULT_ADD_EVENTS = True
 DEFAULT_MODIFY_EVENTS = True
 DEFAULT_REMOVE_EVENTS = True
 DEFAULT_REMOVE_PAST_EVENTS = True
+
+# ------------------------------------------------------------------ #
+# SportsEngine URLs
+# ------------------------------------------------------------------ #
+SE_LOGIN_URL = "https://user.sportngin.com/users/sign_in"
+SE_API_CALENDAR_URL = "https://api.sportngin.com/v3/calendar/mine"
+
+# ------------------------------------------------------------------ #
+# Repair issue IDs
+# ------------------------------------------------------------------ #
+ISSUE_SE_LOGIN_FAILED = "se_login_failed"

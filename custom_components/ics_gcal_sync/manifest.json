@@ -1,7 +1,7 @@
 {
   "domain": "ics_gcal_sync",
   "name": "ICS to Google Calendar Sync",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "documentation": "https://github.com/chris9012/ics_gcal_sync",
   "issue_tracker": "https://github.com/chris9012/ics_gcal_sync/issues",
   "requirements": [

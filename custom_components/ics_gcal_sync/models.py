@@ -15,6 +15,7 @@ class CalendarSource:
     team_name: str = ""
     color_id: str = ""
     enabled: bool = True
+    use_se_enricher: bool = False
 
 
 @dataclass
@@ -34,7 +35,14 @@ class ParsedEvent:
     color_id: str | None
     status: str | None      # "confirmed" | "tentative" | "cancelled"
     url: str | None
-    md5: str                # hash of normalized ICS text (DTSTAMP stripped)
+    md5: str                # hash of normalized ICS text (DTSTAMP stripped) + enrichment suffix
+
+    # Enrichment support: raw ical text (DTSTAMP stripped) is stored so enrichers
+    # can append their output and trigger a MD5 recomputation that includes
+    # enriched fields (matching the GAS script behaviour of embedding seLocation
+    # in the event before hashing).
+    raw_ical_no_dtstamp: str = ""
+    enrichment_suffix: str = ""
 
 
 @dataclass

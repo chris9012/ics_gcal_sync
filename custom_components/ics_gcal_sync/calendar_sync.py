@@ -18,8 +18,9 @@ from .const import (
     DEFAULT_REMOVE_EVENTS,
     DEFAULT_REMOVE_PAST_EVENTS,
 )
+from .enrichers import BaseEnricher
 from .google_calendar_client import GoogleCalendarClient, GoogleCalendarError
-from .ics_parser import async_fetch_and_parse
+from .ics_parser import async_fetch_and_parse, recompute_md5
 from .models import CalendarSource, ParsedEvent, SyncResult
 
 _LOGGER = logging.getLogger(__name__)
@@ -30,22 +31,27 @@ async def async_sync_all(
     client: GoogleCalendarClient,
     sources: list[CalendarSource],
     options: dict,
+    enrichers: list[BaseEnricher] | None = None,
 ) -> list[SyncResult]:
-    """Sync all sources grouped by target calendar. Returns one result per calendar."""
+    """Sync all enabled sources grouped by target calendar."""
     enabled = [s for s in sources if s.enabled]
     if not enabled:
         return []
 
-    # Group sources by target calendar name
+    active_enrichers = enrichers or []
+    calendar_tz = await client.get_timezone()
+
+    # Prime enrichers once before any calendar is processed
+    for enricher in active_enrichers:
+        await enricher.async_prepare(hass, enabled, options)
+
     enabled.sort(key=lambda s: s.target_calendar)
     results: list[SyncResult] = []
-
-    calendar_tz = await client.get_timezone()
 
     for calendar_name, group_iter in groupby(enabled, key=lambda s: s.target_calendar):
         group = list(group_iter)
         result = await _sync_calendar_group(
-            hass, client, calendar_name, group, calendar_tz, options
+            hass, client, calendar_name, group, calendar_tz, options, active_enrichers
         )
         results.append(result)
         _LOGGER.info("Sync complete: %s", result)
@@ -60,6 +66,7 @@ async def _sync_calendar_group(
     sources: list[CalendarSource],
     calendar_tz: str,
     options: dict,
+    enrichers: list[BaseEnricher],
 ) -> SyncResult:
     result = SyncResult(calendar_name=calendar_name)
     add_events = options.get(CONF_ADD_EVENTS, DEFAULT_ADD_EVENTS)
@@ -67,25 +74,19 @@ async def _sync_calendar_group(
     remove_events = options.get(CONF_REMOVE_EVENTS, DEFAULT_REMOVE_EVENTS)
     remove_past = options.get(CONF_REMOVE_PAST_EVENTS, DEFAULT_REMOVE_PAST_EVENTS)
 
+    # Determine which enrichers are active for this calendar group
+    group_enrichers = _select_enrichers(sources, enrichers)
+
     try:
-        # ------------------------------------------------------------------ #
-        # 1. Resolve target calendar
-        # ------------------------------------------------------------------ #
         calendar = await client.get_or_create_calendar(calendar_name, calendar_tz)
         calendar_id = calendar["id"]
 
-        # ------------------------------------------------------------------ #
-        # 2. Load existing GAS-managed events from Google Calendar
-        # ------------------------------------------------------------------ #
+        # Load existing GAS-managed events
         existing_gcal = await client.list_managed_events(calendar_id)
-        _LOGGER.debug(
-            "%s: found %d existing managed events", calendar_name, len(existing_gcal)
-        )
+        _LOGGER.debug("%s: %d existing managed events", calendar_name, len(existing_gcal))
 
-        # Index by composite_id and collect known MD5s
         existing_by_id: dict[str, dict] = {}
         existing_md5s: set[str] = set()
-
         for gcal_event in existing_gcal:
             props = gcal_event.get("extendedProperties", {}).get("private", {})
             event_id = props.get("rec-id") or props.get("id")
@@ -95,9 +96,7 @@ async def _sync_calendar_group(
             if md5:
                 existing_md5s.add(md5)
 
-        # ------------------------------------------------------------------ #
-        # 3. Fetch and parse all ICS sources for this calendar
-        # ------------------------------------------------------------------ #
+        # Fetch and parse ICS sources
         http_session = async_get_clientsession(hass)
         parsed_events: list[ParsedEvent] = []
         seen_composite_ids: set[str] = set()
@@ -111,11 +110,19 @@ async def _sync_calendar_group(
                     seen_composite_ids.add(event.composite_id)
                     parsed_events.append(event)
 
-        _LOGGER.debug("%s: parsed %d events from ICS", calendar_name, len(parsed_events))
+        _LOGGER.debug("%s: parsed %d events", calendar_name, len(parsed_events))
 
-        # ------------------------------------------------------------------ #
-        # 4. Add / update events
-        # ------------------------------------------------------------------ #
+        # Apply enrichers and recompute MD5
+        for enricher in group_enrichers:
+            enriched: list[ParsedEvent] = []
+            for event in parsed_events:
+                enriched.append(await enricher.async_enrich(event, options))
+            parsed_events = enriched
+
+        for event in parsed_events:
+            recompute_md5(event)
+
+        # Add / update
         ics_composite_ids: set[str] = {e.composite_id for e in parsed_events}
 
         for parsed in parsed_events:
@@ -127,61 +134,65 @@ async def _sync_calendar_group(
                     try:
                         await client.update_event(calendar_id, existing["id"], gcal_event)
                         result.modified += 1
-                        _LOGGER.debug("Updated event %s", parsed.composite_id)
                     except GoogleCalendarError as err:
                         result.errors.append(f"Update {parsed.composite_id}: {err}")
-                        _LOGGER.warning("Failed to update event %s: %s", parsed.composite_id, err)
+                        _LOGGER.warning("Failed to update %s: %s", parsed.composite_id, err)
             elif add_events:
                 try:
                     await client.insert_event(calendar_id, gcal_event)
                     result.added += 1
-                    _LOGGER.debug("Added event %s", parsed.composite_id)
                 except GoogleCalendarError as err:
                     result.errors.append(f"Insert {parsed.composite_id}: {err}")
-                    _LOGGER.warning("Failed to add event %s: %s", parsed.composite_id, err)
+                    _LOGGER.warning("Failed to add %s: %s", parsed.composite_id, err)
 
-        # ------------------------------------------------------------------ #
-        # 5. Remove stale events
-        # ------------------------------------------------------------------ #
+        # Remove stale events
         if remove_events:
             now = datetime.now(timezone.utc)
             for composite_id, gcal_event in existing_by_id.items():
                 if composite_id in ics_composite_ids:
                     continue
-                # Recurring event instances are managed by their parent; skip
                 if gcal_event.get("recurringEventId"):
                     continue
-
                 if not remove_past:
                     event_start = _parse_gcal_start(gcal_event)
                     if event_start and event_start < now:
                         continue
-
                 try:
                     await client.delete_event(calendar_id, gcal_event["id"])
                     result.removed += 1
-                    _LOGGER.debug("Removed stale event %s", composite_id)
                 except GoogleCalendarError as err:
                     result.errors.append(f"Delete {composite_id}: {err}")
-                    _LOGGER.warning("Failed to remove event %s: %s", composite_id, err)
+                    _LOGGER.warning("Failed to remove %s: %s", composite_id, err)
 
     except Exception as err:
         result.errors.append(str(err))
-        _LOGGER.error("Sync failed for calendar %s: %s", calendar_name, err)
+        _LOGGER.error("Sync failed for %s: %s", calendar_name, err)
 
     return result
 
 
+def _select_enrichers(
+    sources: list[CalendarSource], enrichers: list[BaseEnricher]
+) -> list[BaseEnricher]:
+    """Return enrichers that are relevant for this calendar group."""
+    from .enrichers.sportsengine import SportsEngineEnricher
+
+    result: list[BaseEnricher] = []
+    uses_se = any(s.use_se_enricher for s in sources)
+    for enricher in enrichers:
+        if isinstance(enricher, SportsEngineEnricher) and not uses_se:
+            continue
+        result.append(enricher)
+    return result
+
+
 def _parse_gcal_start(gcal_event: dict) -> datetime | None:
-    """Parse the start time of a Google Calendar event to a UTC datetime."""
     start = gcal_event.get("start", {})
     dt_str = start.get("dateTime") or start.get("date")
     if not dt_str:
         return None
     try:
         dt = datetime.fromisoformat(dt_str)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
     except ValueError:
         return None

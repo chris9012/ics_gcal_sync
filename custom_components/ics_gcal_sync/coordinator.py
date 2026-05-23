@@ -11,6 +11,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .calendar_sync import async_sync_all
 from .const import (
+    CONF_SE_PASSWORD,
+    CONF_SE_USERNAME,
     CONF_SOURCES,
     CONF_SOURCE_CALENDAR,
     CONF_SOURCE_COLOR,
@@ -18,10 +20,13 @@ from .const import (
     CONF_SOURCE_ID,
     CONF_SOURCE_TEAM,
     CONF_SOURCE_URL,
+    CONF_SOURCE_USE_SE,
     CONF_SYNC_INTERVAL,
     DEFAULT_SYNC_INTERVAL,
     DOMAIN,
 )
+from .enrichers import BaseEnricher
+from .enrichers.sportsengine import SportsEngineEnricher
 from .google_calendar_client import GoogleCalendarClient
 from .models import CalendarSource, SyncResult
 
@@ -46,6 +51,21 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
         )
         self._entry = entry
         self._client = GoogleCalendarClient(hass, oauth_session)
+        self._enrichers: list[BaseEnricher] = self._build_enrichers()
+
+    def _build_enrichers(self) -> list[BaseEnricher]:
+        """Instantiate enrichers based on the current options."""
+        enrichers: list[BaseEnricher] = []
+        options = self._entry.options
+
+        # SE enricher: include if any source uses it AND credentials are present
+        sources = options.get(CONF_SOURCES, [])
+        any_se = any(s.get(CONF_SOURCE_USE_SE, False) for s in sources)
+        has_se_creds = bool(options.get(CONF_SE_USERNAME) and options.get(CONF_SE_PASSWORD))
+        if any_se and has_se_creds:
+            enrichers.append(SportsEngineEnricher())
+
+        return enrichers
 
     def _build_sources(self) -> list[CalendarSource]:
         """Build CalendarSource objects from config entry options."""
@@ -60,6 +80,7 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
                     team_name=raw.get(CONF_SOURCE_TEAM, ""),
                     color_id=raw.get(CONF_SOURCE_COLOR, ""),
                     enabled=raw.get(CONF_SOURCE_ENABLED, True),
+                    use_se_enricher=raw.get(CONF_SOURCE_USE_SE, False),
                 )
             )
         return [s for s in sources if s.ics_url and s.target_calendar]
@@ -71,12 +92,16 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
             _LOGGER.debug("No calendar sources configured; skipping sync")
             return []
 
+        # Rebuild enrichers in case options changed since last run
+        self._enrichers = self._build_enrichers()
+
         try:
             return await async_sync_all(
                 self.hass,
                 self._client,
                 sources,
                 self._entry.options,
+                self._enrichers,
             )
         except Exception as err:
             raise UpdateFailed(f"Sync error: {err}") from err
