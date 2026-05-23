@@ -120,6 +120,9 @@ async def _sync_calendar_group(
             parsed_events = enriched
 
         for event in parsed_events:
+            # Apply team prefix universally (all sources, not just SE)
+            if event.team_name and event.summary:
+                event.summary = f"{event.team_name} - {event.summary}"
             recompute_md5(event)
 
         # Add / update

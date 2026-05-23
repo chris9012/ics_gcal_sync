@@ -90,10 +90,6 @@ class SportsEngineEnricher(BaseEnricher):
                 summary = re.sub(rf"\b{re.escape(token)}\b\s*", "", summary)
             event.summary = summary.strip()
 
-        # ---- Team prefix ----------------------------------------------- #
-        if event.team_name:
-            event.summary = f"{event.team_name} - {event.summary}"
-
         # ---- Update enrichment suffix for MD5 -------------------------- #
         suffix_parts = []
         if se_location:
