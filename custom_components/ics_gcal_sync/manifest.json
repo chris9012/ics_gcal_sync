@@ -1,0 +1,18 @@
+{
+  "domain": "ics_gcal_sync",
+  "name": "ICS to Google Calendar Sync",
+  "version": "0.1.0",
+  "documentation": "https://github.com/chris9012/ics_gcal_sync",
+  "issue_tracker": "https://github.com/chris9012/ics_gcal_sync/issues",
+  "requirements": [
+    "google-auth>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+    "google-api-python-client>=2.0.0",
+    "icalendar>=5.0.0",
+    "recurring-ical-events>=3.0.0"
+  ],
+  "dependencies": ["application_credentials"],
+  "config_flow": true,
+  "iot_class": "cloud_polling",
+  "codeowners": ["@chris9012"]
+}

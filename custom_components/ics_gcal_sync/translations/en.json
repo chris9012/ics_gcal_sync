@@ -1,0 +1,25 @@
+{
+  "config": {
+    "step": {
+      "pick_implementation": {
+        "title": "Authenticate with Google Calendar"
+      }
+    },
+    "abort": {
+      "already_configured": "This Google account is already configured.",
+      "oauth_error": "Received invalid token data.",
+      "missing_configuration": "The integration is not configured. Please follow the documentation."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "ICS GCal Sync Settings",
+        "description": "Manage your ICS calendar sources and sync settings.",
+        "data": {
+          "sync_interval": "Sync interval (minutes)"
+        }
+      }
+    }
+  }
+}
