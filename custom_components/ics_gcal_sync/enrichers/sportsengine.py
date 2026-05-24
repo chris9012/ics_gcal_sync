@@ -13,9 +13,7 @@ from homeassistant.helpers.issue_registry import async_delete_issue
 
 from ..const import (
     CONF_LOCATION_ABBREVIATIONS,
-    CONF_SE_PASSWORD,
     CONF_SE_TITLE_REMOVALS,
-    CONF_SE_USERNAME,
     DOMAIN,
     ISSUE_SE_LOGIN_FAILED,
     SE_API_CALENDAR_URL,
@@ -43,7 +41,10 @@ class SportsEngineEnricher(BaseEnricher):
     - Re-logs in automatically when the session expires.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, username: str = "", password: str = "", account_id: str = "") -> None:
+        self._username = username
+        self._password = password
+        self.account_id = account_id
         self._cookie: str | None = None
         self._location_map: dict[str, str] = {}
 
@@ -58,15 +59,13 @@ class SportsEngineEnricher(BaseEnricher):
         options: dict,
     ) -> None:
         """Fetch SE location data once before processing any events."""
-        username = options.get(CONF_SE_USERNAME, "")
-        password = options.get(CONF_SE_PASSWORD, "")
-        if not username or not password:
+        if not self._username or not self._password:
             _LOGGER.debug("SE credentials not configured; skipping SE location fetch")
             self._location_map = {}
             return
 
         session = async_get_clientsession(hass)
-        self._location_map = await self._async_fetch_locations(hass, session, username, password)
+        self._location_map = await self._async_fetch_locations(hass, session, self._username, self._password)
 
     async def async_enrich(self, event: ParsedEvent, options: dict) -> ParsedEvent:
         """Apply SE enrichment to a single event."""
@@ -87,7 +86,7 @@ class SportsEngineEnricher(BaseEnricher):
         if is_se_event and event.summary:
             summary = re.sub(r"\s*\([^)]*\)", "", event.summary)
             for token in title_removals:
-                summary = re.sub(rf"\b{re.escape(token)}\b\s*", "", summary)
+                summary = re.sub(rf"\b{re.escape(token)}\b\s*", "", summary, flags=re.IGNORECASE)
             event.summary = summary.strip()
 
         # ---- Update enrichment suffix for MD5 -------------------------- #
@@ -137,16 +136,26 @@ class SportsEngineEnricher(BaseEnricher):
                     async with session.get(
                         SE_API_CALENDAR_URL,
                         params={"include_favorites": "1", "page": page, "per_page": 30, "past": "false"},
-                        headers={"Cookie": f"sportngin_session={self._cookie}"},
+                        headers={
+                            "Cookie": f"sportngin_session={self._cookie}",
+                            "Accept": "application/json",
+                            "User-Agent": (
+                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                "Chrome/124.0.0.0 Safari/537.36"
+                            ),
+                        },
                         timeout=aiohttp.ClientTimeout(total=30),
                     ) as resp:
-                        if resp.status in (401, 403):
-                            # Cookie expired; force re-login on next attempt
-                            _LOGGER.debug("SE cookie expired; will re-login")
+                        if resp.status in (400, 401, 403):
+                            # 400/401/403 all indicate an invalid or expired cookie
+                            body = (await resp.text())[:200]
+                            _LOGGER.debug("SE cookie invalid/expired (HTTP %d): %s", resp.status, body)
                             self._cookie = None
                             break
                         if resp.status != 200:
-                            _LOGGER.warning("SE API returned %d", resp.status)
+                            body = (await resp.text())[:200]
+                            _LOGGER.warning("SE API returned %d: %s", resp.status, body)
                             return locations
                         data = await resp.json()
                 except Exception as err:

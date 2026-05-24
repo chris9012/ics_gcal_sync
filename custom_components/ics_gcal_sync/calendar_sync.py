@@ -197,15 +197,28 @@ async def _sync_calendar_group(
 def _select_enrichers(
     sources: list[CalendarSource], enrichers: list[BaseEnricher]
 ) -> list[BaseEnricher]:
-    """Return enrichers that are relevant for this calendar group."""
+    """Return enrichers relevant for this calendar group.
+
+    SE enrichers are matched by account_id. Sources with no account_id set
+    (legacy config) accept any SE enricher that also has no account_id.
+    """
     from .enrichers.sportsengine import SportsEngineEnricher
 
+    se_account_ids = {
+        s.se_account_id for s in sources
+        if s.use_se_enricher and s.se_account_id
+    }
+    uses_se_legacy = any(s.use_se_enricher and not s.se_account_id for s in sources)
+
     result: list[BaseEnricher] = []
-    uses_se = any(s.use_se_enricher for s in sources)
     for enricher in enrichers:
-        if isinstance(enricher, SportsEngineEnricher) and not uses_se:
-            continue
-        result.append(enricher)
+        if isinstance(enricher, SportsEngineEnricher):
+            if enricher.account_id in se_account_ids:
+                result.append(enricher)
+            elif uses_se_legacy and not enricher.account_id:
+                result.append(enricher)
+        else:
+            result.append(enricher)
     return result
 
 

@@ -19,6 +19,8 @@
           "sync_settings": "Sync settings",
           "add_source": "Add calendar source",
           "manage_sources": "Edit / remove sources",
+          "add_se_account": "Add SE account",
+          "manage_se_accounts": "Edit / remove SE accounts",
           "se_settings": "SportsEngine settings",
           "done": "Save & close"
         }
@@ -41,7 +43,8 @@
           "target_calendar": "Target Google Calendar name",
           "team_name": "Prefix (prepended to event titles)",
           "color_id": "Event color ID (1-11, leave blank for default)",
-          "use_se_enricher": "Enrich with SportsEngine field/location data"
+          "use_se_enricher": "Enrich with SportsEngine field/location data",
+          "se_account_id": "SportsEngine account (required when SE enrichment is enabled)"
         }
       },
       "manage_sources": {
@@ -59,6 +62,7 @@
           "team_name": "Prefix",
           "color_id": "Event color ID",
           "use_se_enricher": "Enrich with SportsEngine field/location data",
+          "se_account_id": "SportsEngine account",
           "enabled": "Enabled"
         }
       },
@@ -69,12 +73,39 @@
           "confirm": "Yes, remove this source"
         }
       },
+      "add_se_account": {
+        "title": "Add SportsEngine Account",
+        "data": {
+          "se_account_name": "Account name (e.g. League X)",
+          "se_username": "SportsEngine email",
+          "se_password": "SportsEngine password"
+        }
+      },
+      "manage_se_accounts": {
+        "title": "Manage SE Accounts",
+        "data": {
+          "se_account_id": "SE account",
+          "action": "Action"
+        }
+      },
+      "edit_se_account": {
+        "title": "Edit SE Account",
+        "data": {
+          "se_account_name": "Account name",
+          "se_username": "SportsEngine email",
+          "se_password": "SportsEngine password"
+        }
+      },
+      "confirm_remove_se_account": {
+        "title": "Remove SE Account",
+        "description": "Remove **{account_label}**? Sources assigned to this account will no longer be enriched.",
+        "data": {
+          "confirm": "Yes, remove this account"
+        }
+      },
       "se_settings": {
         "title": "SportsEngine Settings",
-        "description": "Credentials are used to fetch field/location details and are re-used automatically when the session expires.",
         "data": {
-          "se_username": "SportsEngine email",
-          "se_password": "SportsEngine password",
           "location_abbreviations_raw": "Location abbreviations (one per line: Venue Name = Short Name)",
           "se_title_removals_raw": "Title tokens to remove from SportsEngine events (comma-separated)"
         }

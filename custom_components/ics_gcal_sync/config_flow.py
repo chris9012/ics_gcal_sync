@@ -17,6 +17,9 @@ from .const import (
     CONF_REMOVE_EVENTS,
     CONF_REMOVE_PAST_EVENTS,
     CONF_TITLE_CASE,
+    CONF_SE_ACCOUNT_ID,
+    CONF_SE_ACCOUNT_NAME,
+    CONF_SE_ACCOUNTS,
     CONF_SE_PASSWORD,
     CONF_SE_TITLE_REMOVALS,
     CONF_SE_USERNAME,
@@ -86,7 +89,9 @@ class OptionsFlowHandler(OptionsFlow):
         self._config_entry = config_entry
         self._options: dict[str, Any] = dict(config_entry.options)
         self._sources: list[dict] = list(self._options.get(CONF_SOURCES, []))
+        self._se_accounts: list[dict] = list(self._options.get(CONF_SE_ACCOUNTS, []))
         self._editing_idx: int | None = None
+        self._editing_se_idx: int | None = None
 
     # ------------------------------------------------------------------ #
     # Main menu
@@ -96,6 +101,9 @@ class OptionsFlowHandler(OptionsFlow):
         menu_options = ["sync_settings", "add_source"]
         if self._sources:
             menu_options.append("manage_sources")
+        menu_options.append("add_se_account")
+        if self._se_accounts:
+            menu_options.append("manage_se_accounts")
         menu_options += ["se_settings", "done"]
         return self.async_show_menu(step_id="init", menu_options=menu_options)
 
@@ -192,25 +200,26 @@ class OptionsFlowHandler(OptionsFlow):
                         CONF_SOURCE_PREFIX: user_input.get(CONF_SOURCE_PREFIX, "").strip(),
                         CONF_SOURCE_COLOR: user_input.get(CONF_SOURCE_COLOR, "").strip(),
                         CONF_SOURCE_USE_SE: user_input.get(CONF_SOURCE_USE_SE, False),
+                        CONF_SE_ACCOUNT_ID: user_input.get(CONF_SE_ACCOUNT_ID, ""),
                         CONF_SOURCE_ENABLED: True,
                     }
                 )
                 self._options[CONF_SOURCES] = self._sources
                 return await self.async_step_init()
 
-        schema = vol.Schema(
-            {
-                vol.Required("ics_urls_raw"): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=True)
-                ),
-                vol.Required(CONF_SOURCE_CALENDAR): await self._calendar_selector(),
-                vol.Optional(CONF_SOURCE_PREFIX, default=""): selector.TextSelector(),
-                vol.Optional(CONF_SOURCE_COLOR, default=""): selector.TextSelector(),
-                vol.Optional(CONF_SOURCE_USE_SE, default=False): selector.BooleanSelector(),
-            }
-        )
+        schema_dict: dict = {
+            vol.Required("ics_urls_raw"): selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
+            ),
+            vol.Required(CONF_SOURCE_CALENDAR): await self._calendar_selector(),
+            vol.Optional(CONF_SOURCE_PREFIX, default=""): selector.TextSelector(),
+            vol.Optional(CONF_SOURCE_COLOR, default=""): selector.TextSelector(),
+            vol.Optional(CONF_SOURCE_USE_SE, default=False): selector.BooleanSelector(),
+        }
+        if self._se_accounts:
+            schema_dict[vol.Optional(CONF_SE_ACCOUNT_ID, default="")] = _se_account_selector(self._se_accounts)
         return self.async_show_form(
-            step_id="add_source", data_schema=schema, errors=errors
+            step_id="add_source", data_schema=vol.Schema(schema_dict), errors=errors
         )
 
     # ------------------------------------------------------------------ #
@@ -278,6 +287,7 @@ class OptionsFlowHandler(OptionsFlow):
                     CONF_SOURCE_PREFIX: user_input.get(CONF_SOURCE_PREFIX, "").strip(),
                     CONF_SOURCE_COLOR: user_input.get(CONF_SOURCE_COLOR, "").strip(),
                     CONF_SOURCE_USE_SE: user_input.get(CONF_SOURCE_USE_SE, False),
+                    CONF_SE_ACCOUNT_ID: user_input.get(CONF_SE_ACCOUNT_ID, ""),
                     CONF_SOURCE_ENABLED: user_input.get(CONF_SOURCE_ENABLED, True),
                 }
                 self._options[CONF_SOURCES] = self._sources
@@ -289,20 +299,20 @@ class OptionsFlowHandler(OptionsFlow):
         )
         urls_text = "\n".join(existing_urls)
 
-        schema = vol.Schema(
-            {
-                vol.Required("ics_urls_raw", description={"suggested_value": urls_text}): selector.TextSelector(
-                    selector.TextSelectorConfig(multiline=True)
-                ),
-                vol.Required(CONF_SOURCE_CALENDAR, description={"suggested_value": source[CONF_SOURCE_CALENDAR]}): await self._calendar_selector(source[CONF_SOURCE_CALENDAR]),
-                vol.Optional(CONF_SOURCE_PREFIX, description={"suggested_value": source.get(CONF_SOURCE_PREFIX, "")}): selector.TextSelector(),
-                vol.Optional(CONF_SOURCE_COLOR, description={"suggested_value": source.get(CONF_SOURCE_COLOR, "")}): selector.TextSelector(),
-                vol.Optional(CONF_SOURCE_USE_SE, default=source.get(CONF_SOURCE_USE_SE, False)): selector.BooleanSelector(),
-                vol.Optional(CONF_SOURCE_ENABLED, default=source.get(CONF_SOURCE_ENABLED, True)): selector.BooleanSelector(),
-            }
-        )
+        schema_dict: dict = {
+            vol.Required("ics_urls_raw", description={"suggested_value": urls_text}): selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
+            ),
+            vol.Required(CONF_SOURCE_CALENDAR, description={"suggested_value": source[CONF_SOURCE_CALENDAR]}): await self._calendar_selector(source[CONF_SOURCE_CALENDAR]),
+            vol.Optional(CONF_SOURCE_PREFIX, description={"suggested_value": source.get(CONF_SOURCE_PREFIX, "")}): selector.TextSelector(),
+            vol.Optional(CONF_SOURCE_COLOR, description={"suggested_value": source.get(CONF_SOURCE_COLOR, "")}): selector.TextSelector(),
+            vol.Optional(CONF_SOURCE_USE_SE, default=source.get(CONF_SOURCE_USE_SE, False)): selector.BooleanSelector(),
+            vol.Optional(CONF_SOURCE_ENABLED, default=source.get(CONF_SOURCE_ENABLED, True)): selector.BooleanSelector(),
+        }
+        if self._se_accounts:
+            schema_dict[vol.Optional(CONF_SE_ACCOUNT_ID, default=source.get(CONF_SE_ACCOUNT_ID, ""))] = _se_account_selector(self._se_accounts)
         return self.async_show_form(
-            step_id="edit_source", data_schema=schema, errors=errors
+            step_id="edit_source", data_schema=vol.Schema(schema_dict), errors=errors
         )
 
     async def async_step_confirm_remove(self, user_input: dict | None = None):
@@ -356,18 +366,6 @@ class OptionsFlowHandler(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional(
-                    CONF_SE_USERNAME,
-                    description={"suggested_value": self._options.get(CONF_SE_USERNAME, "")},
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(type="email", autocomplete="username")
-                ),
-                vol.Optional(
-                    CONF_SE_PASSWORD,
-                    description={"suggested_value": self._options.get(CONF_SE_PASSWORD, "")},
-                ): selector.TextSelector(
-                    selector.TextSelectorConfig(type="password", autocomplete="current-password")
-                ),
-                vol.Optional(
                     "location_abbreviations_raw",
                     description={"suggested_value": abbrevs_text},
                 ): selector.TextSelector(
@@ -383,6 +381,154 @@ class OptionsFlowHandler(OptionsFlow):
             step_id="se_settings",
             data_schema=schema,
             description_placeholders={"abbrev_help": _ABBREV_HELP},
+        )
+
+    # ------------------------------------------------------------------ #
+    # SE account management
+    # ------------------------------------------------------------------ #
+
+    async def async_step_add_se_account(self, user_input: dict | None = None):
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not user_input.get(CONF_SE_ACCOUNT_NAME, "").strip():
+                errors[CONF_SE_ACCOUNT_NAME] = "required"
+            if not user_input.get(CONF_SE_USERNAME, "").strip():
+                errors[CONF_SE_USERNAME] = "required"
+            if not user_input.get(CONF_SE_PASSWORD, "").strip():
+                errors[CONF_SE_PASSWORD] = "required"
+            if not errors:
+                self._se_accounts.append(
+                    {
+                        CONF_SE_ACCOUNT_ID: str(uuid.uuid4()),
+                        CONF_SE_ACCOUNT_NAME: user_input[CONF_SE_ACCOUNT_NAME].strip(),
+                        CONF_SE_USERNAME: user_input[CONF_SE_USERNAME].strip(),
+                        CONF_SE_PASSWORD: user_input[CONF_SE_PASSWORD].strip(),
+                    }
+                )
+                self._options[CONF_SE_ACCOUNTS] = self._se_accounts
+                return await self.async_step_init()
+
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_SE_ACCOUNT_NAME): selector.TextSelector(),
+                vol.Required(CONF_SE_USERNAME): selector.TextSelector(
+                    selector.TextSelectorConfig(type="email", autocomplete="username")
+                ),
+                vol.Required(CONF_SE_PASSWORD): selector.TextSelector(
+                    selector.TextSelectorConfig(type="password", autocomplete="current-password")
+                ),
+            }
+        )
+        return self.async_show_form(step_id="add_se_account", data_schema=schema, errors=errors)
+
+    async def async_step_manage_se_accounts(self, user_input: dict | None = None):
+        if not self._se_accounts:
+            return await self.async_step_init()
+
+        if user_input is not None:
+            account_id = user_input.get("se_account_id")
+            self._editing_se_idx = next(
+                (i for i, a in enumerate(self._se_accounts) if a[CONF_SE_ACCOUNT_ID] == account_id),
+                None,
+            )
+            if user_input.get("action") == "remove":
+                return await self.async_step_confirm_remove_se_account()
+            return await self.async_step_edit_se_account()
+
+        account_options = {
+            a[CONF_SE_ACCOUNT_ID]: a[CONF_SE_ACCOUNT_NAME]
+            for a in self._se_accounts
+        }
+        schema = vol.Schema(
+            {
+                vol.Required("se_account_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value=k, label=v)
+                            for k, v in account_options.items()
+                        ]
+                    )
+                ),
+                vol.Required("action", default="edit"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="edit", label="Edit"),
+                            selector.SelectOptionDict(value="remove", label="Remove"),
+                        ]
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="manage_se_accounts", data_schema=schema)
+
+    async def async_step_edit_se_account(self, user_input: dict | None = None):
+        if self._editing_se_idx is None:
+            return await self.async_step_init()
+
+        account = self._se_accounts[self._editing_se_idx]
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if not user_input.get(CONF_SE_ACCOUNT_NAME, "").strip():
+                errors[CONF_SE_ACCOUNT_NAME] = "required"
+            if not user_input.get(CONF_SE_USERNAME, "").strip():
+                errors[CONF_SE_USERNAME] = "required"
+            if not user_input.get(CONF_SE_PASSWORD, "").strip():
+                errors[CONF_SE_PASSWORD] = "required"
+            if not errors:
+                self._se_accounts[self._editing_se_idx] = {
+                    **account,
+                    CONF_SE_ACCOUNT_NAME: user_input[CONF_SE_ACCOUNT_NAME].strip(),
+                    CONF_SE_USERNAME: user_input[CONF_SE_USERNAME].strip(),
+                    CONF_SE_PASSWORD: user_input[CONF_SE_PASSWORD].strip(),
+                }
+                self._options[CONF_SE_ACCOUNTS] = self._se_accounts
+                self._editing_se_idx = None
+                return await self.async_step_init()
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_SE_ACCOUNT_NAME,
+                    description={"suggested_value": account.get(CONF_SE_ACCOUNT_NAME, "")},
+                ): selector.TextSelector(),
+                vol.Required(
+                    CONF_SE_USERNAME,
+                    description={"suggested_value": account.get(CONF_SE_USERNAME, "")},
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type="email", autocomplete="username")
+                ),
+                vol.Required(
+                    CONF_SE_PASSWORD,
+                    description={"suggested_value": account.get(CONF_SE_PASSWORD, "")},
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(type="password", autocomplete="current-password")
+                ),
+            }
+        )
+        return self.async_show_form(step_id="edit_se_account", data_schema=schema, errors=errors)
+
+    async def async_step_confirm_remove_se_account(self, user_input: dict | None = None):
+        if user_input is not None:
+            if user_input.get("confirm") and self._editing_se_idx is not None:
+                self._se_accounts.pop(self._editing_se_idx)
+                self._options[CONF_SE_ACCOUNTS] = self._se_accounts
+            self._editing_se_idx = None
+            return await self.async_step_init()
+
+        if self._editing_se_idx is None:
+            return await self.async_step_init()
+
+        account = self._se_accounts[self._editing_se_idx]
+        schema = vol.Schema(
+            {
+                vol.Required("confirm", default=False): selector.BooleanSelector(),
+            }
+        )
+        return self.async_show_form(
+            step_id="confirm_remove_se_account",
+            data_schema=schema,
+            description_placeholders={"account_label": account[CONF_SE_ACCOUNT_NAME]},
         )
 
     # ------------------------------------------------------------------ #
@@ -413,6 +559,17 @@ def _first_url(source: dict) -> str:
     if not urls and source.get(CONF_SOURCE_URL):
         urls = [source[CONF_SOURCE_URL]]
     return urls[0][:60] if urls else "?"
+
+
+def _se_account_selector(se_accounts: list[dict]) -> selector.SelectSelector:
+    """Return a SelectSelector for choosing an SE account (blank = none/any)."""
+    options = [selector.SelectOptionDict(value="", label="(none)")]
+    for acct in se_accounts:
+        options.append(selector.SelectOptionDict(
+            value=acct[CONF_SE_ACCOUNT_ID],
+            label=acct[CONF_SE_ACCOUNT_NAME],
+        ))
+    return selector.SelectSelector(selector.SelectSelectorConfig(options=options))
 
 
 def _parse_abbreviations(raw: str) -> dict[str, str]:

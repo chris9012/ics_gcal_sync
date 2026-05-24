@@ -16,6 +16,7 @@ class CalendarSource:
     color_id: str = ""
     enabled: bool = True
     use_se_enricher: bool = False
+    se_account_id: str = ""
 
 
 @dataclass

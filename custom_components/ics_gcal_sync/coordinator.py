@@ -11,6 +11,8 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .calendar_sync import async_sync_all
 from .const import (
+    CONF_SE_ACCOUNT_ID,
+    CONF_SE_ACCOUNTS,
     CONF_SE_PASSWORD,
     CONF_SE_USERNAME,
     CONF_SOURCES,
@@ -61,12 +63,23 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
         enrichers: list[BaseEnricher] = []
         options = self._entry.options
 
-        # SE enricher: include if any source uses it AND credentials are present
-        sources = options.get(CONF_SOURCES, [])
-        any_se = any(s.get(CONF_SOURCE_USE_SE, False) for s in sources)
-        has_se_creds = bool(options.get(CONF_SE_USERNAME) and options.get(CONF_SE_PASSWORD))
-        if any_se and has_se_creds:
-            enrichers.append(SportsEngineEnricher())
+        se_accounts = options.get(CONF_SE_ACCOUNTS, [])
+        if se_accounts:
+            # One enricher per named SE account
+            for account in se_accounts:
+                username = account.get(CONF_SE_USERNAME, "")
+                password = account.get(CONF_SE_PASSWORD, "")
+                account_id = account.get(CONF_SE_ACCOUNT_ID, "")
+                if username and password:
+                    enrichers.append(SportsEngineEnricher(username, password, account_id=account_id))
+        else:
+            # Backwards compat: single global SE credential
+            username = options.get(CONF_SE_USERNAME, "")
+            password = options.get(CONF_SE_PASSWORD, "")
+            sources = options.get(CONF_SOURCES, [])
+            any_se = any(s.get(CONF_SOURCE_USE_SE, False) for s in sources)
+            if any_se and username and password:
+                enrichers.append(SportsEngineEnricher(username, password))
 
         return enrichers
 
@@ -88,6 +101,7 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
                     color_id=raw.get(CONF_SOURCE_COLOR, ""),
                     enabled=raw.get(CONF_SOURCE_ENABLED, True),
                     use_se_enricher=raw.get(CONF_SOURCE_USE_SE, False),
+                    se_account_id=raw.get(CONF_SE_ACCOUNT_ID, ""),
                 )
             )
         return [s for s in sources if s.ics_urls and s.target_calendar]

@@ -36,9 +36,16 @@ CONF_SOURCE_COLOR = "color_id"
 CONF_SOURCE_ENABLED = "enabled"
 CONF_SOURCE_USE_SE = "use_se_enricher"
 
-# SportsEngine settings (global)
+# SportsEngine accounts list
+CONF_SE_ACCOUNTS = "se_accounts"
+CONF_SE_ACCOUNT_ID = "se_account_id"
+CONF_SE_ACCOUNT_NAME = "se_account_name"
+
+# SportsEngine per-account keys (also used as global fallback keys for backwards compat)
 CONF_SE_USERNAME = "se_username"
 CONF_SE_PASSWORD = "se_password"
+
+# SportsEngine global settings
 CONF_SE_TITLE_REMOVALS = "se_title_removals"
 
 # ------------------------------------------------------------------ #
