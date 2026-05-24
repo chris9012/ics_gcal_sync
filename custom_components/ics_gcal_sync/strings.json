@@ -30,7 +30,8 @@
           "add_events": "Add new events to Google Calendar",
           "modify_events": "Update changed events",
           "remove_events": "Remove events no longer in the feed",
-          "remove_past_events": "Also remove past events"
+          "remove_past_events": "Also remove past events",
+          "title_case": "Smart title case (normalize event title capitalization)"
         }
       },
       "add_source": {

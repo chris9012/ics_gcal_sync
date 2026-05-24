@@ -16,6 +16,7 @@ from .const import (
     CONF_MODIFY_EVENTS,
     CONF_REMOVE_EVENTS,
     CONF_REMOVE_PAST_EVENTS,
+    CONF_TITLE_CASE,
     CONF_SE_PASSWORD,
     CONF_SE_TITLE_REMOVALS,
     CONF_SE_USERNAME,
@@ -34,6 +35,7 @@ from .const import (
     DEFAULT_REMOVE_EVENTS,
     DEFAULT_REMOVE_PAST_EVENTS,
     DEFAULT_SYNC_INTERVAL,
+    DEFAULT_TITLE_CASE,
     DOMAIN,
     OAUTH2_SCOPES,
 )
@@ -129,6 +131,10 @@ class OptionsFlowHandler(OptionsFlow):
                 vol.Optional(
                     CONF_REMOVE_PAST_EVENTS,
                     default=self._options.get(CONF_REMOVE_PAST_EVENTS, DEFAULT_REMOVE_PAST_EVENTS),
+                ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_TITLE_CASE,
+                    default=self._options.get(CONF_TITLE_CASE, DEFAULT_TITLE_CASE),
                 ): selector.BooleanSelector(),
             }
         )

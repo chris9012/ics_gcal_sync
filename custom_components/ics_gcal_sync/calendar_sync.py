@@ -13,10 +13,12 @@ from .const import (
     CONF_MODIFY_EVENTS,
     CONF_REMOVE_EVENTS,
     CONF_REMOVE_PAST_EVENTS,
+    CONF_TITLE_CASE,
     DEFAULT_ADD_EVENTS,
     DEFAULT_MODIFY_EVENTS,
     DEFAULT_REMOVE_EVENTS,
     DEFAULT_REMOVE_PAST_EVENTS,
+    DEFAULT_TITLE_CASE,
 )
 from .enrichers import BaseEnricher
 from .google_calendar_client import GoogleCalendarClient, GoogleCalendarError
@@ -73,6 +75,7 @@ async def _sync_calendar_group(
     modify_events = options.get(CONF_MODIFY_EVENTS, DEFAULT_MODIFY_EVENTS)
     remove_events = options.get(CONF_REMOVE_EVENTS, DEFAULT_REMOVE_EVENTS)
     remove_past = options.get(CONF_REMOVE_PAST_EVENTS, DEFAULT_REMOVE_PAST_EVENTS)
+    title_case = options.get(CONF_TITLE_CASE, DEFAULT_TITLE_CASE)
 
     # Determine which enrichers are active for this calendar group
     group_enrichers = _select_enrichers(sources, enrichers)
@@ -124,6 +127,10 @@ async def _sync_calendar_group(
             # Apply prefix universally (all sources)
             if event.prefix and event.summary:
                 event.summary = f"{event.prefix} - {event.summary}"
+
+            # Normalize title capitalization
+            if title_case and event.summary:
+                event.summary = _to_title_case(event.summary)
 
             # Rebuild enrichment_suffix with the final summary so recompute_md5
             # captures team prefix and title cleanup even for non-SE events.
@@ -200,6 +207,43 @@ def _select_enrichers(
             continue
         result.append(enricher)
     return result
+
+
+_LOWERCASE_WORDS = frozenset({
+    "a", "an", "and", "at", "but", "by", "for", "in", "nor",
+    "of", "on", "or", "so", "the", "to", "up", "vs", "yet",
+})
+
+
+def _to_title_case(text: str) -> str:
+    """Title-case a string, keeping common short words lowercase mid-title.
+
+    Preserves existing mixed-case words (U12, McGregor, etc.).
+    Always capitalizes the first word.
+    """
+    words = text.split(" ")
+    result = []
+    for i, word in enumerate(words):
+        if not word:
+            result.append(word)
+            continue
+        lower = word.lower()
+        if i == 0:
+            if word.isupper() and len(word) <= 3:
+                result.append(word)
+            elif word.isupper() or word.islower():
+                result.append(word.capitalize())
+            else:
+                result.append(word[0].upper() + word[1:])
+        elif lower in _LOWERCASE_WORDS:
+            result.append(lower)
+        elif word.isupper() and len(word) <= 3:
+            result.append(word)
+        elif word.isupper() or word.islower():
+            result.append(word.capitalize())
+        else:
+            result.append(word)
+    return " ".join(result)
 
 
 def _parse_gcal_start(gcal_event: dict) -> datetime | None:

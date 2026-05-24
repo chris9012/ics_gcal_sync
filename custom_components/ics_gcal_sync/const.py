@@ -23,6 +23,7 @@ CONF_ADD_EVENTS = "add_events"
 CONF_MODIFY_EVENTS = "modify_events"
 CONF_REMOVE_EVENTS = "remove_events"
 CONF_REMOVE_PAST_EVENTS = "remove_past_events"
+CONF_TITLE_CASE = "title_case"
 CONF_LOCATION_ABBREVIATIONS = "location_abbreviations"
 
 # Per-source keys
@@ -48,6 +49,7 @@ DEFAULT_ADD_EVENTS = True
 DEFAULT_MODIFY_EVENTS = True
 DEFAULT_REMOVE_EVENTS = True
 DEFAULT_REMOVE_PAST_EVENTS = True
+DEFAULT_TITLE_CASE = True
 
 # ------------------------------------------------------------------ #
 # SportsEngine URLs
