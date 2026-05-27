@@ -5,6 +5,8 @@ import logging
 import re
 from datetime import datetime, timezone
 
+import asyncio
+
 import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -13,7 +15,6 @@ from homeassistant.helpers.issue_registry import async_delete_issue
 
 from ..const import (
     CONF_LOCATION_ABBREVIATIONS,
-    CONF_SE_TITLE_REMOVALS,
     DOMAIN,
     ISSUE_SE_LOGIN_FAILED,
     SE_API_CALENDAR_URL,
@@ -29,7 +30,16 @@ _SE_UID_MARKER = "@sportsengine.com"
 
 
 class SportsEngineLoginError(Exception):
-    """Raised when SE login fails."""
+    """Raised when SE login fails.
+
+    transient=True means the failure was a server-side HTTP error (5xx) that is
+    likely temporary — the next sync cycle should succeed without any config change.
+    transient=False means the failure looks like a credential or flow problem.
+    """
+
+    def __init__(self, message: str, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
 
 
 class SportsEngineEnricher(BaseEnricher):
@@ -70,7 +80,6 @@ class SportsEngineEnricher(BaseEnricher):
     async def async_enrich(self, event: ParsedEvent, options: dict) -> ParsedEvent:
         """Apply SE enrichment to a single event."""
         abbreviations: dict[str, str] = options.get(CONF_LOCATION_ABBREVIATIONS, {})
-        title_removals: list[str] = options.get(CONF_SE_TITLE_REMOVALS, [])
 
         is_se_event = _SE_UID_MARKER in event.uid
 
@@ -82,12 +91,9 @@ class SportsEngineEnricher(BaseEnricher):
         elif event.location:
             event.location = _apply_abbreviations(event.location, abbreviations, prefix_match=False)
 
-        # ---- Title cleanup (SE events only) ---------------------------- #
+        # ---- SE-specific title cleanup (strip sport/division codes in parens) #
         if is_se_event and event.summary:
-            summary = re.sub(r"\s*\([^)]*\)", "", event.summary)
-            for token in title_removals:
-                summary = re.sub(rf"\b{re.escape(token)}\b\s*", "", summary, flags=re.IGNORECASE)
-            event.summary = summary.strip()
+            event.summary = re.sub(r"\s*\([^)]*\)", "", event.summary).strip()
 
         # ---- Update enrichment suffix for MD5 -------------------------- #
         suffix_parts = []
@@ -118,15 +124,20 @@ class SportsEngineEnricher(BaseEnricher):
                     _LOGGER.debug("SE login successful")
                     async_delete_issue(hass, DOMAIN, ISSUE_SE_LOGIN_FAILED)
                 except SportsEngineLoginError as err:
-                    _LOGGER.error("SE login failed: %s", err)
-                    async_create_issue(
-                        hass,
-                        DOMAIN,
-                        ISSUE_SE_LOGIN_FAILED,
-                        is_fixable=True,
-                        severity=IssueSeverity.ERROR,
-                        translation_key=ISSUE_SE_LOGIN_FAILED,
-                    )
+                    if err.transient:
+                        _LOGGER.warning(
+                            "SE login failed (transient server error, will retry next sync): %s", err
+                        )
+                    else:
+                        _LOGGER.error("SE login failed: %s", err)
+                        async_create_issue(
+                            hass,
+                            DOMAIN,
+                            ISSUE_SE_LOGIN_FAILED,
+                            is_fixable=True,
+                            severity=IssueSeverity.ERROR,
+                            translation_key=ISSUE_SE_LOGIN_FAILED,
+                        )
                     return {}
 
             locations: dict[str, str] = {}
@@ -199,77 +210,99 @@ class SportsEngineEnricher(BaseEnricher):
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-        async with aiohttp.ClientSession(headers=base_headers) as s:
-            # ---- Step 1: GET login page → extract CSRF token ----------- #
-            try:
-                async with s.get(SE_LOGIN_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    html1 = await resp.text()
-            except Exception as err:
-                raise SportsEngineLoginError(f"Could not reach SE login page: {err}") from err
+        _TRANSIENT_STATUSES = {502, 503, 504}
+        _last_err: SportsEngineLoginError | None = None
 
-            csrf1 = _extract_csrf(html1)
-            if not csrf1:
-                raise SportsEngineLoginError("CSRF token not found on SE login page (step 1)")
-            _LOGGER.debug("SE step 1 CSRF found (length %d)", len(csrf1))
+        for attempt in range(2):
+            if attempt:
+                await asyncio.sleep(3)
 
-            # ---- Step 2: POST email → get password page + new CSRF ----- #
-            try:
-                async with s.post(
-                    SE_LOGIN_URL,
-                    data={"authenticity_token": csrf1, "user[login]": username, "commit": "Continue"},
-                    headers={"Referer": SE_LOGIN_URL},
-                    allow_redirects=True,
-                    timeout=aiohttp.ClientTimeout(total=15),
-                ) as resp:
-                    if resp.status != 200:
-                        body = (await resp.text())[:500]
-                        _LOGGER.warning("SE step 1 POST returned HTTP %d: %s", resp.status, body)
-                        raise SportsEngineLoginError(f"Step 1 POST returned HTTP {resp.status}")
-                    html2 = await resp.text()
-            except SportsEngineLoginError:
-                raise
-            except Exception as err:
-                raise SportsEngineLoginError(f"Step 1 POST failed: {err}") from err
+            async with aiohttp.ClientSession(headers=base_headers) as s:
+                # ---- Step 1: GET login page → extract CSRF token ------- #
+                try:
+                    async with s.get(SE_LOGIN_URL, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                        if resp.status in _TRANSIENT_STATUSES:
+                            _last_err = SportsEngineLoginError(
+                                f"Step 1 GET returned HTTP {resp.status}", transient=True
+                            )
+                            continue
+                        html1 = await resp.text()
+                except Exception as err:
+                    raise SportsEngineLoginError(f"Could not reach SE login page: {err}") from err
 
-            csrf2 = _extract_csrf(html2)
-            if not csrf2:
-                raise SportsEngineLoginError("CSRF token not found on SE login page (step 2)")
-            _LOGGER.debug("SE step 2 CSRF found (length %d)", len(csrf2))
+                csrf1 = _extract_csrf(html1)
+                if not csrf1:
+                    raise SportsEngineLoginError("CSRF token not found on SE login page (step 1)")
+                _LOGGER.debug("SE step 1 CSRF found (length %d)", len(csrf1))
 
-            # ---- Step 3: POST password → follow redirects, grab cookie - #
-            try:
-                async with s.post(
-                    SE_LOGIN_URL,
-                    data={
-                        "authenticity_token": csrf2,
-                        "user[login]": username,
-                        "user[password]": password,
-                        "commit": "Sign in",
-                    },
-                    headers={"Referer": SE_LOGIN_URL},
-                    allow_redirects=True,
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    _LOGGER.debug(
-                        "SE step 3 final status=%d url=%s", resp.status, resp.url
-                    )
-                    if resp.status not in (200, 302):
-                        body = (await resp.text())[:500]
-                        _LOGGER.warning("SE step 3 returned HTTP %d: %s", resp.status, body)
-                        raise SportsEngineLoginError(f"Step 3 returned HTTP {resp.status}")
-            except SportsEngineLoginError:
-                raise
-            except Exception as err:
-                raise SportsEngineLoginError(f"Step 3 POST failed: {err}") from err
+                # ---- Step 2: POST email → get password page + new CSRF - #
+                try:
+                    async with s.post(
+                        SE_LOGIN_URL,
+                        data={"authenticity_token": csrf1, "user[login]": username, "commit": "Continue"},
+                        headers={"Referer": SE_LOGIN_URL},
+                        allow_redirects=True,
+                        timeout=aiohttp.ClientTimeout(total=15),
+                    ) as resp:
+                        if resp.status in _TRANSIENT_STATUSES:
+                            _last_err = SportsEngineLoginError(
+                                f"Step 2 POST returned HTTP {resp.status}", transient=True
+                            )
+                            continue
+                        if resp.status != 200:
+                            body = (await resp.text())[:500]
+                            _LOGGER.warning("SE step 2 POST returned HTTP %d: %s", resp.status, body)
+                            raise SportsEngineLoginError(f"Step 2 POST returned HTTP {resp.status}")
+                        html2 = await resp.text()
+                except SportsEngineLoginError:
+                    raise
+                except Exception as err:
+                    raise SportsEngineLoginError(f"Step 2 POST failed: {err}") from err
 
-            # Search the entire cookie jar — the cookie domain may differ from
-            # the login URL (e.g. .sportngin.com vs user.sportngin.com)
-            for morsel in s.cookie_jar:
-                if morsel.key == "sportngin_session":
-                    _LOGGER.debug("SE sportngin_session cookie found in jar")
-                    return morsel.value
+                csrf2 = _extract_csrf(html2)
+                if not csrf2:
+                    raise SportsEngineLoginError("CSRF token not found on SE login page (step 2)")
+                _LOGGER.debug("SE step 2 CSRF found (length %d)", len(csrf2))
 
-        raise SportsEngineLoginError("sportngin_session cookie not found after login")
+                # ---- Step 3: POST password → follow redirects, grab cookie #
+                try:
+                    async with s.post(
+                        SE_LOGIN_URL,
+                        data={
+                            "authenticity_token": csrf2,
+                            "user[login]": username,
+                            "user[password]": password,
+                            "commit": "Sign in",
+                        },
+                        headers={"Referer": SE_LOGIN_URL},
+                        allow_redirects=True,
+                        timeout=aiohttp.ClientTimeout(total=30),
+                    ) as resp:
+                        _LOGGER.debug("SE step 3 final status=%d url=%s", resp.status, resp.url)
+                        if resp.status in _TRANSIENT_STATUSES:
+                            _last_err = SportsEngineLoginError(
+                                f"Step 3 returned HTTP {resp.status}", transient=True
+                            )
+                            continue
+                        if resp.status not in (200, 302):
+                            body = (await resp.text())[:500]
+                            _LOGGER.warning("SE step 3 returned HTTP %d: %s", resp.status, body)
+                            raise SportsEngineLoginError(f"Step 3 returned HTTP {resp.status}")
+                except SportsEngineLoginError:
+                    raise
+                except Exception as err:
+                    raise SportsEngineLoginError(f"Step 3 POST failed: {err}") from err
+
+                # Search the entire cookie jar — the cookie domain may differ from
+                # the login URL (e.g. .sportngin.com vs user.sportngin.com)
+                for morsel in s.cookie_jar:
+                    if morsel.key == "sportngin_session":
+                        _LOGGER.debug("SE sportngin_session cookie found in jar")
+                        return morsel.value
+
+                raise SportsEngineLoginError("sportngin_session cookie not found after login")
+
+        raise _last_err or SportsEngineLoginError("SE login failed after retries", transient=True)
 
     # ------------------------------------------------------------------ #
     # Location lookup

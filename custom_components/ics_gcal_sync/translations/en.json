@@ -17,11 +17,9 @@
         "title": "ICS GCal Sync",
         "menu_options": {
           "sync_settings": "Sync settings",
-          "add_source": "Add calendar source",
-          "manage_sources": "Edit / remove sources",
-          "add_se_account": "Add SE account",
-          "manage_se_accounts": "Edit / remove SE accounts",
-          "se_settings": "SportsEngine settings",
+          "calendars": "Manage calendars",
+          "sportsengine": "SportsEngine",
+          "shareable_cals": "Shareable Google Calendars",
           "done": "Save & close"
         }
       },
@@ -36,30 +34,56 @@
           "title_case": "Smart title case (normalize event title capitalization)"
         }
       },
-      "add_source": {
-        "title": "Add Calendar Source",
+      "calendars": {
+        "title": "Manage Calendars",
+        "description": "Select a calendar to manage its sources.",
+        "data": {
+          "calendar_choice": "Calendar"
+        }
+      },
+      "new_calendar": {
+        "title": "Set Up Calendar",
+        "description": "Choose a Google Calendar to add sources to, or type a new calendar name (it will be created on first sync).",
+        "data": {
+          "target_calendar": "Google Calendar"
+        }
+      },
+      "manage_calendar": {
+        "title": "Manage Calendar",
+        "menu_options": {
+          "add_ics_source": "Add ICS calendar source",
+          "add_se_tourney": "Add SE Tourney tournament",
+          "manage_calendar_sources": "Manage sources",
+          "remove_calendar": "Remove all sources for this calendar",
+          "back_to_calendars": "← Back to calendars",
+          "done": "Save & close"
+        }
+      },
+      "add_ics_source": {
+        "title": "Add ICS Source",
+        "description": "Adding to: **{calendar}**",
         "data": {
           "ics_urls_raw": "ICS / iCal feed URLs (one per line)",
-          "target_calendar": "Target Google Calendar name",
-          "team_name": "Prefix (prepended to event titles)",
+          "prefix_emoji": "Emoji",
+          "prefix_text": "Prefix text (e.g. Jax -, Jax, Team Name)",
           "color_id": "Event color ID (1-11, leave blank for default)",
           "use_se_enricher": "Enrich with SportsEngine field/location data",
           "se_account_id": "SportsEngine account (required when SE enrichment is enabled)"
         }
       },
-      "manage_sources": {
-        "title": "Manage Calendar Sources",
+      "manage_calendar_sources": {
+        "title": "Manage Sources — {calendar}",
         "data": {
-          "source_id": "Calendar source",
+          "source_id": "Source",
           "action": "Action"
         }
       },
       "edit_source": {
-        "title": "Edit Calendar Source",
+        "title": "Edit ICS Source",
         "data": {
           "ics_urls_raw": "ICS / iCal feed URLs (one per line)",
-          "target_calendar": "Target Google Calendar name",
-          "team_name": "Prefix",
+          "prefix_emoji": "Emoji",
+          "prefix_text": "Prefix text (e.g. Jax -, Jax, Team Name)",
           "color_id": "Event color ID",
           "use_se_enricher": "Enrich with SportsEngine field/location data",
           "se_account_id": "SportsEngine account",
@@ -67,10 +91,74 @@
         }
       },
       "confirm_remove": {
-        "title": "Remove Calendar Source",
+        "title": "Remove Source",
         "description": "Remove **{source_label}**? Events already synced to Google Calendar will not be deleted.",
         "data": {
           "confirm": "Yes, remove this source"
+        }
+      },
+      "remove_calendar": {
+        "title": "Remove Calendar Sources",
+        "description": "Remove **all sources** for **{calendar}**? Events already synced to Google Calendar will not be deleted. The Google Calendar itself will not be affected.",
+        "data": {
+          "confirm": "Yes, remove all sources for this calendar"
+        }
+      },
+      "add_se_tourney": {
+        "title": "Search SportsEngine Tourney",
+        "description": "Adding to: **{calendar}**",
+        "data": {
+          "query": "Tournament name (search)"
+        }
+      },
+      "se_tourney_pick_tournament": {
+        "title": "Select Tournament",
+        "data": {
+          "tournament_id": "Tournament"
+        }
+      },
+      "se_tourney_pick_division": {
+        "title": "Select Division / Bracket",
+        "data": {
+          "division_id": "Division"
+        }
+      },
+      "se_tourney_pick_team": {
+        "title": "Select Team",
+        "description": "Tournament: **{tournament_name}** / {division_name}",
+        "data": {
+          "team_id": "Team"
+        }
+      },
+      "se_tourney_finalize": {
+        "title": "SE Tourney Source Settings",
+        "description": "**{tournament_name}** / {division_name} / {team_name}\nAdding to: **{calendar}**",
+        "data": {
+          "prefix_emoji": "Emoji",
+          "prefix_text": "Prefix text (e.g. Jax -, Jax, Team Name)",
+          "color_id": "Event color ID (1-11, leave blank for default)",
+          "tm_game_duration": "Game duration"
+        }
+      },
+      "edit_se_tourney": {
+        "title": "Edit SE Tourney Source",
+        "description": "{team_info}",
+        "data": {
+          "prefix_emoji": "Emoji",
+          "prefix_text": "Prefix text (e.g. Jax -, Jax, Team Name)",
+          "color_id": "Event color ID",
+          "tm_game_duration": "Game duration",
+          "enabled": "Enabled"
+        }
+      },
+      "sportsengine": {
+        "title": "SportsEngine",
+        "menu_options": {
+          "add_se_account": "Add SE account",
+          "manage_se_accounts": "Edit / remove SE accounts",
+          "se_settings": "SportsEngine settings",
+          "back_to_init": "← Back to main menu",
+          "done": "Save & close"
         }
       },
       "add_se_account": {
@@ -107,19 +195,82 @@
         "title": "SportsEngine Settings",
         "data": {
           "location_abbreviations_raw": "Location abbreviations (one per line: Venue Name = Short Name)",
-          "se_title_removals_raw": "Title tokens to remove from SportsEngine events (comma-separated)"
+          "se_title_removals_raw": "Title tokens to remove from all events (comma-separated)"
+        }
+      },
+      "source_shared": {
+        "title": "Add to Shareable Calendar?",
+        "description": "Optionally sync this source's events to one of your shareable Google Calendars. A display name entered here will be prepended to event titles only on the shared calendar.",
+        "data": {
+          "target_id": "Shareable calendar",
+          "shared_prefix": "Display name on shared calendar (e.g. Jules, Jax)"
+        }
+      },
+      "shareable_cals": {
+        "title": "Shareable Google Calendars",
+        "description": "Select a shareable calendar to manage, or add a new one.",
+        "data": {
+          "target_choice": "Shareable calendar"
+        }
+      },
+      "new_gcal_target": {
+        "title": "New Shareable Calendar",
+        "description": "Choose an existing Google Calendar or type a new name. Events from the sources you select will be synced here without duplicating your source configuration.",
+        "data": {
+          "gcal_target_calendar": "Google Calendar"
+        }
+      },
+      "manage_gcal_target": {
+        "title": "Manage Shareable Calendar",
+        "menu_options": {
+          "gcal_target_sources": "Choose which sources to include",
+          "gcal_target_source_prefixes": "Set display names per source",
+          "confirm_remove_gcal_target": "Remove this shareable calendar",
+          "back_to_shareable_cals": "← Back to shareable calendars",
+          "done": "Save & close"
+        }
+      },
+      "gcal_target_source_prefixes": {
+        "title": "Display Names — {calendar}",
+        "description": "Select a source to set or change its display name on **{calendar}**. The current name (if any) is shown in parentheses.",
+        "data": {
+          "source_id": "Source"
+        }
+      },
+      "gcal_target_source_prefix_edit": {
+        "title": "Display Name — {calendar}",
+        "description": "**{source}**\n\nEnter the name to show before this source's events on the shared calendar (e.g. Jules, Jax). Leave blank to remove the prefix.",
+        "data": {
+          "shared_prefix": "Display name"
+        }
+      },
+      "gcal_target_sources": {
+        "title": "Included Sources — {calendar}",
+        "description": "Select the sources whose events should be synced to **{calendar}**. Sources remain configured under their primary calendars — no duplication required.",
+        "data": {
+          "source_ids": "Sources to include"
+        }
+      },
+      "confirm_remove_gcal_target": {
+        "title": "Remove Shareable Calendar",
+        "description": "Stop syncing to **{calendar}**? Events already synced there will not be deleted. The Google Calendar itself will not be affected.",
+        "data": {
+          "confirm": "Yes, remove this shareable calendar"
         }
       }
     },
     "error": {
       "invalid_url": "URL must start with http:// or https://",
-      "required": "This field is required"
+      "required": "This field is required",
+      "no_results": "No tournaments found. Try a different search term.",
+      "no_divisions": "Could not load divisions for this tournament. Try another.",
+      "no_teams": "Could not load teams for this division. Try another."
     }
   },
   "issues": {
     "se_login_failed": {
       "title": "SportsEngine login failed",
-      "description": "Could not log in to SportsEngine with the configured credentials. Field and location data will not be fetched until this is resolved.\n\nUpdate your credentials in **Settings → Devices & Services → ICS GCal Sync → Configure → SE accounts**."
+      "description": "Could not log in to SportsEngine with the configured credentials. Field and location data will not be fetched until this is resolved.\n\nUpdate your credentials in **Settings → Devices & Services → ICS GCal Sync → Configure → SportsEngine**."
     }
   }
 }

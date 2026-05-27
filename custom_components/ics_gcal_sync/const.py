@@ -59,10 +59,53 @@ DEFAULT_REMOVE_PAST_EVENTS = True
 DEFAULT_TITLE_CASE = True
 
 # ------------------------------------------------------------------ #
-# SportsEngine URLs
+# Source types
+# ------------------------------------------------------------------ #
+CONF_SOURCE_TYPE = "source_type"
+SOURCE_TYPE_ICS = "ics"
+SOURCE_TYPE_SE_TOURNEY = "se_tourney"
+
+# SportsEngine Tourney per-source keys.
+# NOTE: string VALUES are kept as "tm_*" for backward compatibility with
+# already-stored config entries — only the Python constant names changed.
+CONF_SE_TOURNEY_TOURNAMENT_ID = "tm_tournament_id"
+CONF_SE_TOURNEY_DIVISION_ID = "tm_division_id"
+CONF_SE_TOURNEY_TEAM_ID = "tm_team_id"
+CONF_SE_TOURNEY_TOURNAMENT_NAME = "tm_tournament_name"
+CONF_SE_TOURNEY_DIVISION_NAME = "tm_division_name"
+CONF_SE_TOURNEY_TEAM_NAME = "tm_team_name"
+CONF_SE_TOURNEY_GAME_DURATION = "tm_game_duration"
+
+DEFAULT_SE_TOURNEY_GAME_DURATION = 90
+
+# ------------------------------------------------------------------ #
+# SportsEngine API URLs
 # ------------------------------------------------------------------ #
 SE_LOGIN_URL = "https://user.sportngin.com/users/sign_in"
 SE_API_CALENDAR_URL = "https://api.sportngin.com/v3/calendar/mine"
+
+# ------------------------------------------------------------------ #
+# SportsEngine Tourney (TourneyMachine) page URLs
+# ------------------------------------------------------------------ #
+SE_TOURNEY_SEARCH_API_URL = "https://api.tourneymachine.com/private/v1/TournamentSearch/Tournaments/{query}"
+SE_TOURNEY_TOURNAMENT_PAGE_URL = "https://tourneymachine.com/Public/Results/Tournament.aspx"
+SE_TOURNEY_DIVISION_PAGE_URL = "https://tourneymachine.com/Public/Results/Division.aspx"
+SE_TOURNEY_TEAM_PAGE_URL = "https://tourneymachine.com/Public/Results/Team.aspx"
+
+# ------------------------------------------------------------------ #
+# Shareable / additional Google Calendar targets
+# ------------------------------------------------------------------ #
+# A list of extra Google Calendars that pull events from existing sources
+# without duplicating the source configuration.  Each entry is a dict with:
+#   CONF_GCAL_TARGET_ID        — internal UUID
+#   CONF_GCAL_TARGET_NAME      — Google Calendar name
+#   CONF_GCAL_TARGET_SOURCE_IDS — list of CONF_SOURCE_ID values to include
+CONF_GCAL_TARGETS = "gcal_targets"
+CONF_GCAL_TARGET_ID = "gcal_target_id"
+CONF_GCAL_TARGET_NAME = "gcal_target_calendar"
+CONF_GCAL_TARGET_SOURCE_IDS = "gcal_target_source_ids"
+# Maps source_id → display prefix used only on the shareable calendar copy.
+CONF_GCAL_TARGET_SOURCE_PREFIXES = "gcal_target_source_prefixes"
 
 # ------------------------------------------------------------------ #
 # Repair issue IDs

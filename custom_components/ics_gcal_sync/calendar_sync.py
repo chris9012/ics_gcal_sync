@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from itertools import groupby
 
@@ -10,15 +11,18 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_ADD_EVENTS,
+    CONF_LOCATION_ABBREVIATIONS,
     CONF_MODIFY_EVENTS,
     CONF_REMOVE_EVENTS,
     CONF_REMOVE_PAST_EVENTS,
+    CONF_SE_TITLE_REMOVALS,
     CONF_TITLE_CASE,
     DEFAULT_ADD_EVENTS,
     DEFAULT_MODIFY_EVENTS,
     DEFAULT_REMOVE_EVENTS,
     DEFAULT_REMOVE_PAST_EVENTS,
     DEFAULT_TITLE_CASE,
+    SOURCE_TYPE_SE_TOURNEY,
 )
 from .enrichers import BaseEnricher
 from .google_calendar_client import GoogleCalendarClient, GoogleCalendarError
@@ -99,20 +103,40 @@ async def _sync_calendar_group(
             if md5:
                 existing_md5s.add(md5)
 
-        # Fetch and parse ICS sources
+        # Fetch and parse all sources (ICS or TourneyMachine)
         http_session = async_get_clientsession(hass)
         parsed_events: list[ParsedEvent] = []
         seen_composite_ids: set[str] = set()
 
         for source in sources:
-            for url in source.ics_urls:
-                fetched = await async_fetch_and_parse(
-                    http_session, url, source.prefix, source.color_id
+            if source.source_type == SOURCE_TYPE_SE_TOURNEY:
+                from .se_tourney_parser import async_fetch_games
+                fetched = await async_fetch_games(
+                    hass,
+                    source.se_tourney_tournament_id,
+                    source.se_tourney_division_id,
+                    source.se_tourney_team_id,
+                    source.prefix,
+                    source.color_id,
+                    source.se_tourney_game_duration,
                 )
                 for event in fetched:
                     if event.composite_id not in seen_composite_ids:
                         seen_composite_ids.add(event.composite_id)
+                        if source.shared_display_name:
+                            event.shared_display_name = source.shared_display_name
                         parsed_events.append(event)
+            else:
+                for url in source.ics_urls:
+                    fetched = await async_fetch_and_parse(
+                        http_session, url, source.prefix, source.color_id
+                    )
+                    for event in fetched:
+                        if event.composite_id not in seen_composite_ids:
+                            seen_composite_ids.add(event.composite_id)
+                            if source.shared_display_name:
+                                event.shared_display_name = source.shared_display_name
+                            parsed_events.append(event)
 
         _LOGGER.debug("%s: parsed %d events", calendar_name, len(parsed_events))
 
@@ -123,22 +147,57 @@ async def _sync_calendar_group(
                 enriched.append(await enricher.async_enrich(event, options))
             parsed_events = enriched
 
-        for event in parsed_events:
-            # Apply prefix universally (all sources)
-            if event.prefix and event.summary:
-                event.summary = f"{event.prefix} - {event.summary}"
+        title_removals: list[str] = options.get(CONF_SE_TITLE_REMOVALS, [])
+        location_abbreviations: dict[str, str] = options.get(CONF_LOCATION_ABBREVIATIONS, {})
 
-            # Normalize title capitalization
-            if title_case and event.summary:
+        for event in parsed_events:
+            # Apply location abbreviations universally. The SE enricher already handles
+            # SE-API-resolved locations with a prefix match; this covers raw ICS locations
+            # for all sources (including non-SE calendars with no enricher active).
+            if location_abbreviations and event.location:
+                event.location = _apply_location_abbreviations(event.location, location_abbreviations)
+
+            # Strip "[N] - " seed/bracket number prefixes from SE ICS and SE Tourney titles
+            # (e.g. "[3] - Bears vs [2] - Lions" → "Bears vs Lions")
+            if event.summary:
+                event.summary = re.sub(r"\[\d+\]\s*-\s*", "", event.summary).strip()
+
+            # Apply title token removals to all events (not just SE).
+            if title_removals and event.summary:
+                summary = event.summary
+                for token in title_removals:
+                    summary = re.sub(rf"\b{re.escape(token)}\b\s*", "", summary, flags=re.IGNORECASE)
+                event.summary = summary.strip()
+
+            # Apply prefix universally (all sources).
+            # Smart separator: respect what the user already put at the end of the prefix.
+            #   ends with space        → append directly ("Jax - " + "Title")
+            #   ends with - : | / etc  → add one space  ("Jax -"  + " Title")
+            #   has ASCII letters       → add " - "      ("Jules"  + " - Title")
+            #   emoji-only             → add " "         ("⚽"      + " Title")
+            if event.prefix and event.summary:
+                if event.shared_display_name:
+                    event.summary = f"{event.prefix}({event.shared_display_name}) {event.summary}"
+                else:
+                    event.summary = f"{event.prefix}{event.summary}"
+            elif event.shared_display_name and event.summary:
+                event.summary = f"({event.shared_display_name}) {event.summary}"
+
+            # Normalize title capitalization (skip for SE Tourney — team names are proper nouns)
+            if title_case and event.summary and not event.skip_title_case:
                 event.summary = _to_title_case(event.summary)
 
-            # Rebuild enrichment_suffix with the final summary so recompute_md5
-            # captures team prefix and title cleanup even for non-SE events.
-            # Keep any seLocation= part, replace any existing summary= part.
+            # Rebuild enrichment_suffix so recompute_md5 captures all post-parse
+            # transformations. Keep seLocation= (set by SE enricher); add location=
+            # for other events so abbreviation changes trigger GCal updates.
+            existing_parts = [p for p in event.enrichment_suffix.split("|") if p]
+            has_se_location = any(p.startswith("seLocation=") for p in existing_parts)
             other_parts = [
-                p for p in event.enrichment_suffix.split("|")
-                if p and not p.startswith("summary=")
+                p for p in existing_parts
+                if not p.startswith("summary=") and not p.startswith("location=")
             ]
+            if event.location and not has_se_location:
+                other_parts.append(f"location={event.location}")
             if event.summary:
                 other_parts.append(f"summary={event.summary}")
             event.enrichment_suffix = "|".join(other_parts)
@@ -151,9 +210,20 @@ async def _sync_calendar_group(
         for parsed in parsed_events:
             gcal_event = GoogleCalendarClient.build_event(parsed, calendar_tz)
 
-            if parsed.composite_id in existing_by_id:
+            existing = existing_by_id.get(parsed.composite_id)
+            if existing is None:
+                # Prefix changed (e.g. added/changed emoji): find same uid stored under
+                # a different key and re-index it so it gets updated rather than duplicated.
+                uid_prefix = parsed.uid + "_"
+                for old_key, evt in list(existing_by_id.items()):
+                    if old_key == parsed.uid or old_key.startswith(uid_prefix):
+                        existing = evt
+                        del existing_by_id[old_key]
+                        existing_by_id[parsed.composite_id] = existing
+                        break
+
+            if existing is not None:
                 if parsed.md5 not in existing_md5s and modify_events:
-                    existing = existing_by_id[parsed.composite_id]
                     try:
                         await client.update_event(calendar_id, existing["id"], gcal_event)
                         result.modified += 1
@@ -242,7 +312,7 @@ def _to_title_case(text: str) -> str:
             continue
         lower = word.lower()
         if i == 0:
-            if word.isupper() and len(word) <= 3:
+            if word.isupper() and len(word) <= 2:
                 result.append(word)
             elif word.isupper() or word.islower():
                 result.append(word.capitalize())
@@ -250,13 +320,22 @@ def _to_title_case(text: str) -> str:
                 result.append(word[0].upper() + word[1:])
         elif lower in _LOWERCASE_WORDS:
             result.append(lower)
-        elif word.isupper() and len(word) <= 3:
+        elif word.isupper() and len(word) <= 2:
             result.append(word)
         elif word.isupper() or word.islower():
             result.append(word.capitalize())
         else:
             result.append(word)
     return " ".join(result)
+
+
+def _apply_location_abbreviations(location: str, abbreviations: dict[str, str]) -> str:
+    """Replace venue names/addresses with short names via case-insensitive substring match."""
+    loc_lower = location.lower()
+    for key, abbrev in abbreviations.items():
+        if key.lower() in loc_lower:
+            return abbrev
+    return location
 
 
 def _parse_gcal_start(gcal_event: dict) -> datetime | None:

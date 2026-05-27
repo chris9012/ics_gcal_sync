@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 @dataclass
 class CalendarSource:
-    """One ICS feed → target Google Calendar mapping."""
+    """One calendar feed → target Google Calendar mapping."""
 
     id: str
     ics_urls: list[str]
@@ -17,6 +17,19 @@ class CalendarSource:
     enabled: bool = True
     use_se_enricher: bool = False
     se_account_id: str = ""
+    # Source type: "ics" (default) or "se_tourney"
+    source_type: str = "ics"
+    # Display name prepended to event titles only on shareable calendar copies.
+    # Never affects composite_id or iCalUID, so deduplication stays intact.
+    shared_display_name: str = ""
+    # SportsEngine Tourney fields (populated when source_type == "se_tourney")
+    se_tourney_tournament_id: str = ""
+    se_tourney_division_id: str = ""
+    se_tourney_team_id: str = ""
+    se_tourney_tournament_name: str = ""
+    se_tourney_division_name: str = ""
+    se_tourney_team_name: str = ""
+    se_tourney_game_duration: int = 90
 
 
 @dataclass
@@ -37,6 +50,8 @@ class ParsedEvent:
     status: str | None      # "confirmed" | "tentative" | "cancelled"
     url: str | None
     md5: str                # hash of normalized ICS text (DTSTAMP stripped) + enrichment suffix
+    skip_title_case: bool = False  # set True for sources whose names should not be title-cased
+    shared_display_name: str = ""  # set on shareable-calendar copies; prepended as "(Name) " in summary
 
     # Enrichment support: raw ical text (DTSTAMP stripped) is stored so enrichers
     # can append their output and trigger a MD5 recomputation that includes
