@@ -176,10 +176,11 @@ async def _sync_calendar_group(
             #   has ASCII letters       → add " - "      ("Jules"  + " - Title")
             #   emoji-only             → add " "         ("⚽"      + " Title")
             if event.prefix and event.summary:
+                sep = _prefix_sep(event.prefix)
                 if event.shared_display_name:
-                    event.summary = f"{event.prefix}({event.shared_display_name}) {event.summary}"
+                    event.summary = f"{event.prefix}{sep}({event.shared_display_name}) {event.summary}"
                 else:
-                    event.summary = f"{event.prefix}{event.summary}"
+                    event.summary = f"{event.prefix}{sep}{event.summary}"
             elif event.shared_display_name and event.summary:
                 event.summary = f"({event.shared_display_name}) {event.summary}"
 
@@ -290,6 +291,17 @@ def _select_enrichers(
         else:
             result.append(enricher)
     return result
+
+
+def _prefix_sep(prefix: str) -> str:
+    """Return the separator to insert between a prefix and the following text."""
+    if not prefix or prefix[-1] == " ":
+        return ""
+    if prefix[-1] in "-:|/\\":
+        return " "
+    if any(c.isascii() and c.isalpha() for c in prefix):
+        return " - "
+    return " "
 
 
 _LOWERCASE_WORDS = frozenset({
