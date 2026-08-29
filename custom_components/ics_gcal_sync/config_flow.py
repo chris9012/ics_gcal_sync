@@ -17,6 +17,7 @@ from .const import (
     CONF_GCAL_TARGET_ID,
     CONF_GCAL_TARGET_NAME,
     CONF_GCAL_TARGET_SOURCE_IDS,
+    CONF_GCAL_TARGET_SOURCE_GAMES_ONLY,
     CONF_GCAL_TARGET_SOURCE_PREFIXES,
     CONF_LOCATION_ABBREVIATIONS,
     CONF_MODIFY_EVENTS,
@@ -35,6 +36,7 @@ from .const import (
     CONF_SOURCE_ENABLED,
     CONF_SOURCE_ID,
     CONF_SOURCE_PREFIX,
+    CONF_SOURCE_TITLE,
     CONF_SOURCE_TYPE,
     CONF_SOURCE_URL,
     CONF_SOURCE_URLS,
@@ -286,6 +288,7 @@ class OptionsFlowHandler(OptionsFlow):
                         CONF_SOURCE_ID: new_id,
                         CONF_SOURCE_URLS: ics_urls,
                         CONF_SOURCE_CALENDAR: self._selected_calendar,
+                        CONF_SOURCE_TITLE: user_input.get(CONF_SOURCE_TITLE, "").strip(),
                         CONF_SOURCE_PREFIX: _combine_prefix(
                             user_input.get("prefix_emoji", ""),
                             user_input.get("prefix_text", ""),
@@ -304,6 +307,7 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("ics_urls_raw"): selector.TextSelector(
                 selector.TextSelectorConfig(multiline=True)
             ),
+            vol.Optional(CONF_SOURCE_TITLE, default=""): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional("prefix_emoji", default=""): _emoji_selector(),
             vol.Optional("prefix_text", default=""): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional(CONF_SOURCE_COLOR, default=""): selector.TextSelector(),
@@ -394,6 +398,7 @@ class OptionsFlowHandler(OptionsFlow):
                 self._sources[self._editing_idx] = {
                     **source,
                     CONF_SOURCE_URLS: ics_urls,
+                    CONF_SOURCE_TITLE: user_input.get(CONF_SOURCE_TITLE, "").strip(),
                     CONF_SOURCE_PREFIX: _combine_prefix(
                         user_input.get("prefix_emoji", ""),
                         user_input.get("prefix_text", ""),
@@ -417,9 +422,18 @@ class OptionsFlowHandler(OptionsFlow):
             vol.Required("ics_urls_raw", description={"suggested_value": urls_text}): selector.TextSelector(
                 selector.TextSelectorConfig(multiline=True)
             ),
+            vol.Optional(
+                CONF_SOURCE_TITLE, default="", description={"suggested_value": source.get(CONF_SOURCE_TITLE, "")}
+            ): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional("prefix_emoji", default=_prefix_emoji): _emoji_selector(),
-            vol.Optional("prefix_text", default=_prefix_text): selector.TextSelector(selector.TextSelectorConfig()),
-            vol.Optional(CONF_SOURCE_COLOR, default=source.get(CONF_SOURCE_COLOR, "")): selector.TextSelector(),
+            vol.Optional(
+                "prefix_text", default="", description={"suggested_value": _prefix_text}
+            ): selector.TextSelector(selector.TextSelectorConfig()),
+            vol.Optional(
+                CONF_SOURCE_COLOR,
+                default="",
+                description={"suggested_value": source.get(CONF_SOURCE_COLOR, "")},
+            ): selector.TextSelector(),
             vol.Optional(CONF_SOURCE_USE_SE, default=source.get(CONF_SOURCE_USE_SE, False)): selector.BooleanSelector(),
             vol.Optional(CONF_SOURCE_ENABLED, default=source.get(CONF_SOURCE_ENABLED, True)): selector.BooleanSelector(),
         }
@@ -620,6 +634,7 @@ class OptionsFlowHandler(OptionsFlow):
                 CONF_SOURCE_ID: new_id,
                 CONF_SOURCE_TYPE: SOURCE_TYPE_SE_TOURNEY,
                 CONF_SOURCE_CALENDAR: self._selected_calendar,
+                CONF_SOURCE_TITLE: user_input.get(CONF_SOURCE_TITLE, "").strip(),
                 CONF_SOURCE_PREFIX: _combine_prefix(
                     user_input.get("prefix_emoji", ""),
                     user_input.get("prefix_text", ""),
@@ -641,6 +656,7 @@ class OptionsFlowHandler(OptionsFlow):
             return await self.async_step_source_shared()
 
         schema = vol.Schema({
+            vol.Optional(CONF_SOURCE_TITLE, default=""): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional("prefix_emoji", default=""): _emoji_selector(),
             vol.Optional("prefix_text", default=""): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional(CONF_SOURCE_COLOR, default=""): selector.TextSelector(),
@@ -671,6 +687,7 @@ class OptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             self._sources[self._editing_idx] = {
                 **source,
+                CONF_SOURCE_TITLE: user_input.get(CONF_SOURCE_TITLE, "").strip(),
                 CONF_SOURCE_PREFIX: _combine_prefix(
                     user_input.get("prefix_emoji", ""),
                     user_input.get("prefix_text", ""),
@@ -692,11 +709,17 @@ class OptionsFlowHandler(OptionsFlow):
         ]))
         _prefix_emoji, _prefix_text = _split_prefix(source.get(CONF_SOURCE_PREFIX, ""))
         schema = vol.Schema({
+            vol.Optional(
+                CONF_SOURCE_TITLE, default="", description={"suggested_value": source.get(CONF_SOURCE_TITLE, "")}
+            ): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional("prefix_emoji", default=_prefix_emoji): _emoji_selector(),
-            vol.Optional("prefix_text", default=_prefix_text): selector.TextSelector(selector.TextSelectorConfig()),
+            vol.Optional(
+                "prefix_text", default="", description={"suggested_value": _prefix_text}
+            ): selector.TextSelector(selector.TextSelectorConfig()),
             vol.Optional(
                 CONF_SOURCE_COLOR,
-                default=source.get(CONF_SOURCE_COLOR, ""),
+                default="",
+                description={"suggested_value": source.get(CONF_SOURCE_COLOR, "")},
             ): selector.TextSelector(),
             vol.Optional(
                 CONF_SE_TOURNEY_GAME_DURATION,
@@ -897,6 +920,7 @@ class OptionsFlowHandler(OptionsFlow):
         target = self._gcal_targets[self._editing_gcal_target_idx]
         source_ids = target.get(CONF_GCAL_TARGET_SOURCE_IDS, [])
         current_prefixes: dict[str, str] = target.get(CONF_GCAL_TARGET_SOURCE_PREFIXES, {})
+        current_games_only: dict[str, bool] = target.get(CONF_GCAL_TARGET_SOURCE_GAMES_ONLY, {})
         source_by_id = {s[CONF_SOURCE_ID]: s for s in self._sources}
 
         if user_input is not None:
@@ -913,7 +937,8 @@ class OptionsFlowHandler(OptionsFlow):
                 continue
             base = f"[{source.get(CONF_SOURCE_CALENDAR, '?')}] {_source_label(source)}"
             current = current_prefixes.get(sid, "")
-            label = f"{base}  —  ({current})" if current else base
+            tags = [t for t in [current, "games only" if current_games_only.get(sid) else ""] if t]
+            label = f"{base}  —  ({', '.join(tags)})" if tags else base
             options.append(selector.SelectOptionDict(value=sid, label=label))
 
         if not options:
@@ -942,6 +967,7 @@ class OptionsFlowHandler(OptionsFlow):
         target = self._gcal_targets[self._editing_gcal_target_idx]
         sid = self._editing_gcal_target_source_id
         current_prefixes: dict[str, str] = dict(target.get(CONF_GCAL_TARGET_SOURCE_PREFIXES, {}))
+        current_games_only: dict[str, bool] = dict(target.get(CONF_GCAL_TARGET_SOURCE_GAMES_ONLY, {}))
         source_by_id = {s[CONF_SOURCE_ID]: s for s in self._sources}
         source = source_by_id.get(sid, {})
         source_label = f"[{source.get(CONF_SOURCE_CALENDAR, '?')}] {_source_label(source)}"
@@ -952,16 +978,24 @@ class OptionsFlowHandler(OptionsFlow):
                 current_prefixes[sid] = val
             else:
                 current_prefixes.pop(sid, None)
+            if user_input.get("games_only", False):
+                current_games_only[sid] = True
+            else:
+                current_games_only.pop(sid, None)
             self._gcal_targets[self._editing_gcal_target_idx][CONF_GCAL_TARGET_SOURCE_PREFIXES] = current_prefixes
+            self._gcal_targets[self._editing_gcal_target_idx][CONF_GCAL_TARGET_SOURCE_GAMES_ONLY] = current_games_only
             self._options[CONF_GCAL_TARGETS] = self._gcal_targets
             self._editing_gcal_target_source_id = ""
             return await self.async_step_gcal_target_source_prefixes()
 
         current = current_prefixes.get(sid, "")
         schema = vol.Schema({
-            vol.Optional("shared_prefix", default=current): selector.TextSelector(
-                selector.TextSelectorConfig()
-            ),
+            vol.Optional(
+                "shared_prefix", default="", description={"suggested_value": current}
+            ): selector.TextSelector(selector.TextSelectorConfig()),
+            vol.Optional(
+                "games_only", default=current_games_only.get(sid, False)
+            ): selector.BooleanSelector(),
         })
         return self.async_show_form(
             step_id="gcal_target_source_prefix_edit",
@@ -1230,6 +1264,8 @@ def _first_url(source: dict) -> str:
 
 def _source_label(source: dict) -> str:
     """Return a display label for a source (calendar-scoped, so no calendar prefix)."""
+    if source.get(CONF_SOURCE_TITLE):
+        return source[CONF_SOURCE_TITLE]
     if source.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_SE_TOURNEY:
         parts = [p for p in [
             source.get(CONF_SE_TOURNEY_TOURNAMENT_NAME, ""),
@@ -1318,3 +1354,8 @@ def _remove_source_from_gcal_targets(gcal_targets: list[dict], source_id: str) -
             prefixes = dict(prefixes)
             del prefixes[source_id]
             target[CONF_GCAL_TARGET_SOURCE_PREFIXES] = prefixes
+        games_only = target.get(CONF_GCAL_TARGET_SOURCE_GAMES_ONLY, {})
+        if source_id in games_only:
+            games_only = dict(games_only)
+            del games_only[source_id]
+            target[CONF_GCAL_TARGET_SOURCE_GAMES_ONLY] = games_only

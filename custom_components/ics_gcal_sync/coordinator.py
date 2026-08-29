@@ -15,6 +15,7 @@ from .const import (
     CONF_GCAL_TARGETS,
     CONF_GCAL_TARGET_NAME,
     CONF_GCAL_TARGET_SOURCE_IDS,
+    CONF_GCAL_TARGET_SOURCE_GAMES_ONLY,
     CONF_GCAL_TARGET_SOURCE_PREFIXES,
     CONF_SE_ACCOUNT_ID,
     CONF_SE_ACCOUNTS,
@@ -161,6 +162,7 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
             if not target_name or not source_ids:
                 continue
             source_prefixes: dict[str, str] = target.get(CONF_GCAL_TARGET_SOURCE_PREFIXES, {})
+            source_games_only: dict[str, bool] = target.get(CONF_GCAL_TARGET_SOURCE_GAMES_ONLY, {})
             for sid in source_ids:
                 orig = source_by_id.get(sid)
                 if orig is None:
@@ -170,6 +172,7 @@ class ICSGCalSyncCoordinator(DataUpdateCoordinator[list[SyncResult]]):
                     orig,
                     target_calendar=target_name,
                     shared_display_name=shared_prefix,
+                    games_only=source_games_only.get(sid, False),
                 ))
 
         return sources

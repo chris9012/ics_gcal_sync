@@ -31,6 +31,7 @@ CONF_SOURCE_ID = "id"
 CONF_SOURCE_URL = "ics_url"    # legacy single-URL key — kept for migration reads only
 CONF_SOURCE_URLS = "ics_urls"  # current multi-URL key (list of strings)
 CONF_SOURCE_CALENDAR = "target_calendar"
+CONF_SOURCE_TITLE = "source_title"  # optional user-facing name for identifying the source in lists
 CONF_SOURCE_PREFIX = "team_name"  # stored key kept as "team_name" for backwards compat
 CONF_SOURCE_COLOR = "color_id"
 CONF_SOURCE_ENABLED = "enabled"
@@ -106,6 +107,9 @@ CONF_GCAL_TARGET_NAME = "gcal_target_calendar"
 CONF_GCAL_TARGET_SOURCE_IDS = "gcal_target_source_ids"
 # Maps source_id → display prefix used only on the shareable calendar copy.
 CONF_GCAL_TARGET_SOURCE_PREFIXES = "gcal_target_source_prefixes"
+# Maps source_id → bool. When true, only "game" events (title contains "vs"/"at")
+# are synced to this shareable calendar copy; practices/other events are skipped.
+CONF_GCAL_TARGET_SOURCE_GAMES_ONLY = "gcal_target_source_games_only"
 
 # ------------------------------------------------------------------ #
 # Repair issue IDs

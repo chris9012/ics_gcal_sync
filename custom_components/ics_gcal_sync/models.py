@@ -22,6 +22,9 @@ class CalendarSource:
     # Display name prepended to event titles only on shareable calendar copies.
     # Never affects composite_id or iCalUID, so deduplication stays intact.
     shared_display_name: str = ""
+    # When true (shareable calendar copies only), skip events whose title doesn't
+    # look like a game (no "vs"/"at"), so only games are synced to that calendar.
+    games_only: bool = False
     # SportsEngine Tourney fields (populated when source_type == "se_tourney")
     se_tourney_tournament_id: str = ""
     se_tourney_division_id: str = ""

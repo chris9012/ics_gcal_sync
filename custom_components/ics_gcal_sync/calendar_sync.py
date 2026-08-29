@@ -120,6 +120,8 @@ async def _sync_calendar_group(
                     source.color_id,
                     source.se_tourney_game_duration,
                 )
+                if source.games_only:
+                    fetched = [e for e in fetched if _is_game_title(e.summary)]
                 for event in fetched:
                     if event.composite_id not in seen_composite_ids:
                         seen_composite_ids.add(event.composite_id)
@@ -131,6 +133,8 @@ async def _sync_calendar_group(
                     fetched = await async_fetch_and_parse(
                         http_session, url, source.prefix, source.color_id
                     )
+                    if source.games_only:
+                        fetched = [e for e in fetched if _is_game_title(e.summary)]
                     for event in fetched:
                         if event.composite_id not in seen_composite_ids:
                             seen_composite_ids.add(event.composite_id)
@@ -291,6 +295,18 @@ def _select_enrichers(
         else:
             result.append(enricher)
     return result
+
+
+_GAME_TITLE_RE = re.compile(r"\b(vs|at)\b", re.IGNORECASE)
+_PRACTICE_TITLE_RE = re.compile(r"\bpractice\b", re.IGNORECASE)
+
+
+def _is_game_title(summary: str | None) -> bool:
+    """Heuristic: a title containing "vs" (also matches "vs.") or "at" as a whole word looks
+    like a game, unless it's explicitly a practice (e.g. "Practice at Main Field")."""
+    if not summary or _PRACTICE_TITLE_RE.search(summary):
+        return False
+    return bool(_GAME_TITLE_RE.search(summary))
 
 
 def _prefix_sep(prefix: str) -> str:
